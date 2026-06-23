@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Warm-up - TikTok Auto Commenter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4"><i class="bi bi-fire"></i> Account Warm-up</h2>
+        <p class="text-muted">Daily warm-up routines keep accounts active and ensure comments appear publicly visible. Each account runs its own isolated warm-up with randomized timing.</p>
+
+        <!-- TikTok Warm-up Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-tiktok"></i> TikTok Warm-up</h5>
+            </div>
+            <div class="card-body">
+                {% if tiktok_data %}
+                {% for item in tiktok_data %}
+                <div class="border rounded p-3 mb-3" style="border-color: #0f3460 !important;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">
+                            <i class="bi bi-person-circle"></i> {{ item.account.nickname }}
+                            {% if item.schedule and item.schedule.enabled %}
+                            <span class="badge bg-success ms-2">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary ms-2">Disabled</span>
+                            {% endif %}
+                            {% if item.schedule and item.schedule.last_run_date == today %}
+                            <span class="badge bg-info ms-1">Warmed up today</span>
+                            {% endif %}
+                        </h6>
+                        <div>
+                            <form action="{{ url_for('warmup_toggle', account_id=item.account.id) }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm {% if item.schedule and item.schedule.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
+                                    {% if item.schedule and item.schedule.enabled %}
+                                    <i class="bi bi-pause-fill"></i> Disable
+                                    {% else %}
+                                    <i class="bi bi-play-fill"></i> Enable
+                                    {% endif %}
+                                </button>
+                            </form>
+                            <form action="{{ url_for('warmup_run_now', account_id=item.account.id) }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-lightning-fill"></i> Run Now
+                                </button>
+                            </form>
+                            <button class="btn btn-sm btn-outline-info" type="button" data-bs-toggle="collapse" data-bs-target="#tiktokConfig{{ item.account.id }}">
+                                <i class="bi bi-gear"></i> Configure
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#tiktokLogs{{ item.account.id }}">
+                                <i class="bi bi-list-ul"></i> Logs
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Schedule Configuration (Collapsible) -->
+                    <div class="collapse mt-3" id="tiktokConfig{{ item.account.id }}">
+                        <form action="{{ url_for('warmup_schedule_update', account_id=item.account.id) }}" method="POST">
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label small">Watch (min-max)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="daily_watch_min" value="{{ item.schedule.daily_watch_min if item.schedule else 3 }}" min="0" max="20">
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" class="form-control" name="daily_watch_max" value="{{ item.schedule.daily_watch_max if item.schedule else 8 }}" min="0" max="20">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Like (min-max)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="daily_like_min" value="{{ item.schedule.daily_like_min if item.schedule else 2 }}" min="0" max="20">
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" class="form-control" name="daily_like_max" value="{{ item.schedule.daily_like_max if item.schedule else 5 }}" min="0" max="20">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Comment (min-max)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="daily_comment_min" value="{{ item.schedule.daily_comment_min if item.schedule else 1 }}" min="0" max="10">
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" class="form-control" name="daily_comment_max" value="{{ item.schedule.daily_comment_max if item.schedule else 2 }}" min="0" max="10">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Follow (min-max)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="daily_follow_min" value="{{ item.schedule.daily_follow_min if item.schedule else 0 }}" min="0" max="5">
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" class="form-control" name="daily_follow_max" value="{{ item.schedule.daily_follow_max if item.schedule else 1 }}" min="0" max="5">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row g-2 mt-2">
+                                <div class="col-md-3">
+                                    <label class="form-label small">Time Window Start</label>
+                                    <input type="time" class="form-control form-control-sm" name="time_window_start" value="{{ item.schedule.time_window_start if item.schedule else '08:00' }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Time Window End</label>
+                                    <input type="time" class="form-control form-control-sm" name="time_window_end" value="{{ item.schedule.time_window_end if item.schedule else '22:00' }}">
+                                </div>
+                                <div class="col-md-6 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> Save Schedule</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Recent Logs (Collapsible) -->
+                    <div class="collapse mt-3" id="tiktokLogs{{ item.account.id }}">
+                        {% if item.logs %}
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Action</th>
+                                    <th>Target</th>
+                                    <th>Status</th>
+                                    <th>Detail</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for log in item.logs %}
+                                <tr>
+                                    <td><span class="badge bg-secondary">{{ log.action_type }}</span></td>
+                                    <td class="text-truncate" style="max-width: 120px;">{{ log.target_id }}</td>
+                                    <td>
+                                        {% if log.status == 'success' %}
+                                        <span class="badge bg-success">{{ log.status }}</span>
+                                        {% elif log.status == 'failed' %}
+                                        <span class="badge bg-danger">{{ log.status }}</span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark">{{ log.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-truncate" style="max-width: 200px;">{{ log.detail }}</td>
+                                    <td>{{ log.executed_at.strftime('%H:%M:%S') if log.executed_at else '-' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% else %}
+                        <p class="text-muted small mb-0">No warm-up activity logged yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-tiktok display-4 text-muted"></i>
+                    <p class="text-muted mt-2">No TikTok accounts found. Add accounts in <a href="{{ url_for('settings') }}">Settings</a>.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Facebook Warm-up Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-facebook"></i> Facebook Warm-up</h5>
+            </div>
+            <div class="card-body">
+                {% if facebook_data %}
+                {% for item in facebook_data %}
+                <div class="border rounded p-3 mb-3" style="border-color: #0f3460 !important;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">
+                            <i class="bi bi-person-circle"></i> {{ item.account.nickname }}
+                            {% if item.schedule and item.schedule.enabled %}
+                            <span class="badge bg-success ms-2">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary ms-2">Disabled</span>
+                            {% endif %}
+                            {% if item.schedule and item.schedule.last_run_date == today %}
+                            <span class="badge bg-info ms-1">Warmed up today</span>
+                            {% endif %}
+                        </h6>
+                        <div>
+                            <form action="{{ url_for('warmup_toggle', account_id=item.account.id) }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm {% if item.schedule and item.schedule.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
+                                    {% if item.schedule and item.schedule.enabled %}
+                                    <i class="bi bi-pause-fill"></i> Disable
+                                    {% else %}
+                                    <i class="bi bi-play-fill"></i> Enable
+                                    {% endif %}
+                                </button>
+                            </form>
+                            <form action="{{ url_for('warmup_run_now', account_id=item.account.id) }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-lightning-fill"></i> Run Now
+                                </button>
+                            </form>
+                            <button class="btn btn-sm btn-outline-info" type="button" data-bs-toggle="collapse" data-bs-target="#fbConfig{{ item.account.id }}">
+                                <i class="bi bi-gear"></i> Configure
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#fbLogs{{ item.account.id }}">
+                                <i class="bi bi-list-ul"></i> Logs
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Schedule Configuration (Collapsible) -->
+                    <div class="collapse mt-3" id="fbConfig{{ item.account.id }}">
+                        <form action="{{ url_for('warmup_schedule_update', account_id=item.account.id) }}" method="POST">
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label small">Watch (min-max)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="daily_watch_min" value="{{ item.schedule.daily_watch_min if item.schedule else 3 }}" min="0" max="20">
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" class="form-control" name="daily_watch_max" value="{{ item.schedule.daily_watch_max if item.schedule else 8 }}" min="0" max="20">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Like (min-max)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="daily_like_min" value="{{ item.schedule.daily_like_min if item.schedule else 2 }}" min="0" max="20">
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" class="form-control" name="daily_like_max" value="{{ item.schedule.daily_like_max if item.schedule else 5 }}" min="0" max="20">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Comment (min-max)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="daily_comment_min" value="{{ item.schedule.daily_comment_min if item.schedule else 1 }}" min="0" max="10">
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" class="form-control" name="daily_comment_max" value="{{ item.schedule.daily_comment_max if item.schedule else 2 }}" min="0" max="10">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Follow (min-max)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" name="daily_follow_min" value="{{ item.schedule.daily_follow_min if item.schedule else 0 }}" min="0" max="5">
+                                        <span class="input-group-text">-</span>
+                                        <input type="number" class="form-control" name="daily_follow_max" value="{{ item.schedule.daily_follow_max if item.schedule else 1 }}" min="0" max="5">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row g-2 mt-2">
+                                <div class="col-md-3">
+                                    <label class="form-label small">Time Window Start</label>
+                                    <input type="time" class="form-control form-control-sm" name="time_window_start" value="{{ item.schedule.time_window_start if item.schedule else '08:00' }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Time Window End</label>
+                                    <input type="time" class="form-control form-control-sm" name="time_window_end" value="{{ item.schedule.time_window_end if item.schedule else '22:00' }}">
+                                </div>
+                                <div class="col-md-6 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> Save Schedule</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Recent Logs (Collapsible) -->
+                    <div class="collapse mt-3" id="fbLogs{{ item.account.id }}">
+                        {% if item.logs %}
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Action</th>
+                                    <th>Target</th>
+                                    <th>Status</th>
+                                    <th>Detail</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for log in item.logs %}
+                                <tr>
+                                    <td><span class="badge bg-secondary">{{ log.action_type }}</span></td>
+                                    <td class="text-truncate" style="max-width: 120px;">{{ log.target_id }}</td>
+                                    <td>
+                                        {% if log.status == 'success' %}
+                                        <span class="badge bg-success">{{ log.status }}</span>
+                                        {% elif log.status == 'failed' %}
+                                        <span class="badge bg-danger">{{ log.status }}</span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark">{{ log.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-truncate" style="max-width: 200px;">{{ log.detail }}</td>
+                                    <td>{{ log.executed_at.strftime('%H:%M:%S') if log.executed_at else '-' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% else %}
+                        <p class="text-muted small mb-0">No warm-up activity logged yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-facebook display-4 text-muted"></i>
+                    <p class="text-muted mt-2">No Facebook accounts found. Add accounts in <a href="{{ url_for('settings') }}">Settings</a>.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

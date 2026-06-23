@@ -55,6 +55,141 @@ class TikTok:
             ),
         }
 
+    def get_feed(self) -> list:
+        """Fetch recommended videos from the For You feed for warm-up targets.
+
+        Returns:
+            A list of aweme_ids (video IDs) from the feed.
+        """
+        url = f"{self.base_url}/aweme/v1/feed/"
+        params = self.params.copy()
+        headers = self.headers.copy()
+        params.update({
+            'count': '10',
+            'version_name': '38.6.2',
+        })
+
+        signature = self._sign(urlencode(params), payload="")
+        headers.update({
+            'x-argus': signature["x-argus"],
+            'x-gorgon': signature["x-gorgon"],
+            'x-khronos': signature["x-khronos"],
+            'x-ladon': signature["x-ladon"],
+        })
+
+        try:
+            response = requests.get(url, params=params, headers=headers, proxies=self.proxies)
+            data = response.json()
+            aweme_list = data.get("aweme_list", [])
+            return [item["aweme_id"] for item in aweme_list if "aweme_id" in item]
+        except Exception:
+            return []
+
+    def watch_video(self, aweme_id: str) -> bool:
+        """Simulate watching a video by calling the video detail endpoint with a delay.
+
+        Args:
+            aweme_id: The video ID to watch.
+
+        Returns:
+            True if the video was fetched successfully, False otherwise.
+        """
+        url = f"{self.base_url}/aweme/v1/aweme/detail/"
+        params = self.params.copy()
+        headers = self.headers.copy()
+        params.update({
+            'aweme_id': aweme_id,
+            'version_name': '38.6.2',
+        })
+
+        signature = self._sign(urlencode(params), payload="")
+        headers.update({
+            'x-argus': signature["x-argus"],
+            'x-gorgon': signature["x-gorgon"],
+            'x-khronos': signature["x-khronos"],
+            'x-ladon': signature["x-ladon"],
+        })
+
+        try:
+            response = requests.get(url, params=params, headers=headers, proxies=self.proxies)
+            # Simulate watch time (3-7 seconds)
+            time.sleep(3 + random.randint(0, 4))
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    def like_video(self, aweme_id: str) -> bool:
+        """Like a video (digg endpoint).
+
+        Args:
+            aweme_id: The video ID to like.
+
+        Returns:
+            True if the like was successful, False otherwise.
+        """
+        url = f"{self.base_url}/aweme/v1/commit/item/digg/"
+        params = self.params.copy()
+        headers = self.headers.copy()
+        params.update({
+            'version_name': '38.6.2',
+        })
+
+        data = {
+            'aweme_id': aweme_id,
+            'type': '1',
+        }
+
+        signature = self._sign(urlencode(params), urlencode(data))
+        headers.update({
+            'x-argus': signature["x-argus"],
+            'x-gorgon': signature["x-gorgon"],
+            'x-khronos': signature["x-khronos"],
+            'x-ladon': signature["x-ladon"],
+        })
+
+        try:
+            response = requests.post(url, params=params, data=data, headers=headers, proxies=self.proxies)
+            result = response.json()
+            return result.get("status_code") == 0
+        except Exception:
+            return False
+
+    def follow_user(self, user_id: str) -> bool:
+        """Follow a user by user_id.
+
+        Args:
+            user_id: The user ID to follow.
+
+        Returns:
+            True if the follow was successful, False otherwise.
+        """
+        url = f"{self.base_url}/aweme/v1/commit/follow/user/"
+        params = self.params.copy()
+        headers = self.headers.copy()
+        params.update({
+            'version_name': '38.6.2',
+        })
+
+        data = {
+            'user_id': user_id,
+            'type': '1',
+        }
+
+        signature = self._sign(urlencode(params), urlencode(data))
+        headers.update({
+            'x-argus': signature["x-argus"],
+            'x-gorgon': signature["x-gorgon"],
+            'x-khronos': signature["x-khronos"],
+            'x-ladon': signature["x-ladon"],
+        })
+
+        try:
+            response = requests.post(url, params=params, data=data, headers=headers, proxies=self.proxies)
+            result = response.json()
+            return result.get("status_code") == 0
+        except Exception:
+            return False
+
     def get_video(self) -> list:
         url = f"{self.base_url}/tiktok/user/relation/maf/list/v1"
         params = self.params.copy()

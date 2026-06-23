@@ -1,8 +1,9 @@
 import os
 import re
+import json
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, date
 
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
@@ -62,6 +63,39 @@ class GlobalSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(100), unique=True, nullable=False)
     value = db.Column(db.Text, default="")
+
+
+class WarmupSchedule(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=False)
+    enabled = db.Column(db.Boolean, default=True)
+    daily_watch_min = db.Column(db.Integer, default=3)
+    daily_watch_max = db.Column(db.Integer, default=8)
+    daily_like_min = db.Column(db.Integer, default=2)
+    daily_like_max = db.Column(db.Integer, default=5)
+    daily_comment_min = db.Column(db.Integer, default=1)
+    daily_comment_max = db.Column(db.Integer, default=2)
+    daily_follow_min = db.Column(db.Integer, default=0)
+    daily_follow_max = db.Column(db.Integer, default=1)
+    time_window_start = db.Column(db.String(10), default="08:00")
+    time_window_end = db.Column(db.String(10), default="22:00")
+    last_run_date = db.Column(db.Date, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    account = db.relationship("Account", backref="warmup_schedule", lazy=True)
+
+
+class WarmupLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=False)
+    action_type = db.Column(db.String(50), nullable=False)
+    target_id = db.Column(db.String(200), default="")
+    status = db.Column(db.String(50), default="success")
+    detail = db.Column(db.Text, default="")
+    executed_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    account = db.relationship("Account", backref="warmup_logs", lazy=True)
 
 
 def get_global_setting(key):
@@ -208,6 +242,27 @@ def run_project_task(app, project_id):
                     db.session.commit()
                     continue
 
+                # Check if account is warmed up before sending comments
+                from warmup import is_account_warmed_up
+                if not is_account_warmed_up(account.id, db.session, WarmupSchedule):
+                    pc.status = "pending"
+                    history_entry = History(
+                        project_id=project.id,
+                        video_id=aweme_id,
+                        comment_text=pc.comment_text,
+                        status="failed",
+                        account_nickname=account.nickname,
+                        video_url=project.video_url,
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(history_entry)
+                    db.session.commit()
+                    logger.info(
+                        "Account %s not warmed up yet, deferring comment",
+                        account.nickname
+                    )
+                    continue
+
                 # Pass proxy from account to TikTok class
                 proxy = account.proxy if account.proxy else None
                 tiktok = TikTok(account.session_id, proxy=proxy)
@@ -295,6 +350,27 @@ def run_facebook_project_task(app, project_id):
                     )
                     db.session.add(history_entry)
                     db.session.commit()
+                    continue
+
+                # Check if account is warmed up before sending comments
+                from warmup import is_account_warmed_up
+                if not is_account_warmed_up(account.id, db.session, WarmupSchedule):
+                    pc.status = "pending"
+                    history_entry = History(
+                        project_id=project.id,
+                        video_id="",
+                        comment_text=pc.comment_text,
+                        status="failed",
+                        account_nickname=account.nickname,
+                        video_url=project.video_url,
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(history_entry)
+                    db.session.commit()
+                    logger.info(
+                        "Facebook account %s not warmed up yet, deferring comment",
+                        account.nickname
+                    )
                     continue
 
                 proxy = account.proxy if account.proxy else None
@@ -754,6 +830,146 @@ def create_app():
 
         flash("Project started running in the background.", "success")
         return redirect(url_for("facebook_dashboard"))
+
+    # --- Warm-up Routes ---
+    @app.route("/warmup")
+    def warmup_dashboard():
+        tiktok_accounts = Account.query.filter_by(platform="tiktok").all()
+        facebook_accounts = Account.query.filter_by(platform="facebook").all()
+
+        # Get warmup schedules for each account
+        tiktok_data = []
+        for account in tiktok_accounts:
+            schedule = WarmupSchedule.query.filter_by(account_id=account.id).first()
+            recent_logs = WarmupLog.query.filter_by(account_id=account.id).order_by(
+                WarmupLog.executed_at.desc()
+            ).limit(10).all()
+            tiktok_data.append({
+                "account": account,
+                "schedule": schedule,
+                "logs": recent_logs,
+            })
+
+        facebook_data = []
+        for account in facebook_accounts:
+            schedule = WarmupSchedule.query.filter_by(account_id=account.id).first()
+            recent_logs = WarmupLog.query.filter_by(account_id=account.id).order_by(
+                WarmupLog.executed_at.desc()
+            ).limit(10).all()
+            facebook_data.append({
+                "account": account,
+                "schedule": schedule,
+                "logs": recent_logs,
+            })
+
+        return render_template(
+            "warmup.html",
+            tiktok_data=tiktok_data,
+            facebook_data=facebook_data,
+            today=date.today()
+        )
+
+    @app.route("/warmup/schedule/<int:account_id>", methods=["POST"])
+    def warmup_schedule_update(account_id):
+        account = db.session.get(Account, account_id)
+        if not account:
+            flash("Account not found.", "error")
+            return redirect(url_for("warmup_dashboard"))
+
+        schedule = WarmupSchedule.query.filter_by(account_id=account_id).first()
+        if not schedule:
+            schedule = WarmupSchedule(account_id=account_id)
+            db.session.add(schedule)
+
+        schedule.daily_watch_min = int(request.form.get("daily_watch_min", 3))
+        schedule.daily_watch_max = int(request.form.get("daily_watch_max", 8))
+        schedule.daily_like_min = int(request.form.get("daily_like_min", 2))
+        schedule.daily_like_max = int(request.form.get("daily_like_max", 5))
+        schedule.daily_comment_min = int(request.form.get("daily_comment_min", 1))
+        schedule.daily_comment_max = int(request.form.get("daily_comment_max", 2))
+        schedule.daily_follow_min = int(request.form.get("daily_follow_min", 0))
+        schedule.daily_follow_max = int(request.form.get("daily_follow_max", 1))
+        schedule.time_window_start = request.form.get("time_window_start", "08:00").strip()
+        schedule.time_window_end = request.form.get("time_window_end", "22:00").strip()
+        schedule.updated_at = datetime.utcnow()
+
+        db.session.commit()
+        flash(f"Warm-up schedule updated for {account.nickname}.", "success")
+        return redirect(url_for("warmup_dashboard"))
+
+    @app.route("/warmup/toggle/<int:account_id>", methods=["POST"])
+    def warmup_toggle(account_id):
+        account = db.session.get(Account, account_id)
+        if not account:
+            flash("Account not found.", "error")
+            return redirect(url_for("warmup_dashboard"))
+
+        schedule = WarmupSchedule.query.filter_by(account_id=account_id).first()
+        if not schedule:
+            schedule = WarmupSchedule(account_id=account_id, enabled=True)
+            db.session.add(schedule)
+        else:
+            schedule.enabled = not schedule.enabled
+
+        schedule.updated_at = datetime.utcnow()
+        db.session.commit()
+
+        status = "enabled" if schedule.enabled else "disabled"
+        flash(f"Warm-up {status} for {account.nickname}.", "success")
+        return redirect(url_for("warmup_dashboard"))
+
+    @app.route("/warmup/logs/<int:account_id>")
+    def warmup_logs(account_id):
+        logs = WarmupLog.query.filter_by(account_id=account_id).order_by(
+            WarmupLog.executed_at.desc()
+        ).limit(50).all()
+
+        return jsonify([
+            {
+                "id": log.id,
+                "action_type": log.action_type,
+                "target_id": log.target_id,
+                "status": log.status,
+                "detail": log.detail,
+                "executed_at": log.executed_at.isoformat() if log.executed_at else None,
+            }
+            for log in logs
+        ])
+
+    @app.route("/warmup/run-now/<int:account_id>", methods=["POST"])
+    def warmup_run_now(account_id):
+        account = db.session.get(Account, account_id)
+        if not account:
+            flash("Account not found.", "error")
+            return redirect(url_for("warmup_dashboard"))
+
+        # Ensure schedule exists
+        schedule = WarmupSchedule.query.filter_by(account_id=account_id).first()
+        if not schedule:
+            schedule = WarmupSchedule(account_id=account_id, enabled=True)
+            db.session.add(schedule)
+            db.session.commit()
+
+        # Run warm-up in a background thread
+        from warmup import warmup_engine
+
+        def _run():
+            warmup_engine.run_now(account_id)
+
+        thread = threading.Thread(target=_run)
+        thread.daemon = True
+        thread.start()
+
+        flash(f"Warm-up triggered for {account.nickname}. Check logs for progress.", "success")
+        return redirect(url_for("warmup_dashboard"))
+
+    # --- Initialize Warm-up Scheduler ---
+    from warmup import warmup_engine
+    warmup_engine.init_app(app)
+    warmup_engine.start()
+
+    import atexit
+    atexit.register(warmup_engine.shutdown)
 
     return app
 

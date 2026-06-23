@@ -109,6 +109,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'warmup_dashboard' %}active{% endif %}" href="{{ url_for('warmup_dashboard') }}">
+                            <i class="bi bi-fire"></i> Warm-up
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}" href="{{ url_for('settings') }}">
                             <i class="bi bi-gear-fill"></i> Settings
                         </a>

@@ -106,16 +106,36 @@
                                                     <input type="text" class="form-control" name="nickname" value="{{ account.nickname }}" required>
                                                 </div>
                                                 <div class="mb-3">
-                                                    <label class="form-label">Session ID</label>
+                                                    <label class="form-label edit-session-label">
+                                                        {% if account.platform == 'facebook' %}Facebook Cookies (c_user &amp; xs){% else %}Session ID{% endif %}
+                                                    </label>
                                                     <input type="password" class="form-control" name="session_id" placeholder="Leave blank to keep unchanged">
+                                                    <div class="form-text edit-session-help">
+                                                        {% if account.platform == 'facebook' %}
+                                                        Enter as JSON: {"c_user": "...", "xs": "..."}
+                                                        {% else %}
+                                                        Your TikTok sessionid cookie value.
+                                                        {% endif %}
+                                                    </div>
                                                 </div>
+                                                {% if account.platform == 'facebook' %}
+                                                <div class="alert alert-info small">
+                                                    <h6><i class="bi bi-info-circle"></i> Facebook Cookie Extraction</h6>
+                                                    <ol class="mb-1">
+                                                        <li>Log into Facebook in Chrome/Firefox</li>
+                                                        <li>Open DevTools (F12) &gt; Application &gt; Cookies &gt; facebook.com</li>
+                                                        <li>Copy <code>c_user</code> and <code>xs</code> values</li>
+                                                        <li>Format: <code>{"c_user": "VALUE", "xs": "VALUE"}</code></li>
+                                                    </ol>
+                                                </div>
+                                                {% endif %}
                                                 <div class="mb-3">
                                                     <label class="form-label">Proxy</label>
                                                     <input type="text" class="form-control" name="proxy" value="{{ account.proxy }}" placeholder="http://host:port">
                                                 </div>
                                                 <div class="mb-3">
                                                     <label class="form-label">Platform</label>
-                                                    <select class="form-select" name="platform">
+                                                    <select class="form-select edit-platform-select" name="platform">
                                                         <option value="tiktok" {% if account.platform == 'tiktok' %}selected{% endif %}>TikTok</option>
                                                         <option value="facebook" {% if account.platform == 'facebook' %}selected{% endif %}>Facebook</option>
                                                     </select>
@@ -159,8 +179,20 @@
                         <input type="text" class="form-control" name="nickname" placeholder="My Account" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Session ID</label>
-                        <input type="password" class="form-control" name="session_id" placeholder="Enter session ID" required>
+                        <label class="form-label" id="addSessionLabel">Session ID</label>
+                        <input type="password" class="form-control" name="session_id" id="addSessionInput" placeholder="Enter session ID" required>
+                        <div class="form-text" id="addSessionHelp">Your TikTok sessionid cookie value.</div>
+                    </div>
+                    <!-- Facebook Cookie Extraction Guide -->
+                    <div class="alert alert-info d-none" id="addFbCookieGuide">
+                        <h6><i class="bi bi-info-circle"></i> How to Extract Facebook Cookies</h6>
+                        <ol class="mb-2 small">
+                            <li>Log into Facebook in Chrome or Firefox</li>
+                            <li>Open DevTools (F12) &gt; Application &gt; Cookies &gt; facebook.com</li>
+                            <li>Copy the values of <code>c_user</code> and <code>xs</code> cookies</li>
+                            <li>Enter them as JSON below:</li>
+                        </ol>
+                        <code>{"c_user": "YOUR_C_USER", "xs": "YOUR_XS"}</code>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Proxy (optional)</label>
@@ -168,7 +200,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Platform</label>
-                        <select class="form-select" name="platform">
+                        <select class="form-select" name="platform" id="addPlatformSelect">
                             <option value="tiktok" selected>TikTok</option>
                             <option value="facebook">Facebook</option>
                         </select>
@@ -186,6 +218,28 @@
 
 {% block scripts %}
 <script>
+// Add Account Modal - Platform Selection Logic
+document.getElementById('addPlatformSelect').addEventListener('change', function() {
+    const isFacebook = this.value === 'facebook';
+    const label = document.getElementById('addSessionLabel');
+    const input = document.getElementById('addSessionInput');
+    const help = document.getElementById('addSessionHelp');
+    const guide = document.getElementById('addFbCookieGuide');
+
+    if (isFacebook) {
+        label.textContent = 'Facebook Cookies (c_user & xs)';
+        input.placeholder = '{"c_user": "...", "xs": "..."}';
+        help.textContent = 'Enter your Facebook cookies as JSON.';
+        guide.classList.remove('d-none');
+    } else {
+        label.textContent = 'Session ID';
+        input.placeholder = 'Enter session ID';
+        help.textContent = 'Your TikTok sessionid cookie value.';
+        guide.classList.add('d-none');
+    }
+});
+
+// Fetch Models Button
 document.getElementById('fetchModelsBtn').addEventListener('click', function() {
     const modelSelect = document.getElementById('globalModelSelect');
     const btn = this;
