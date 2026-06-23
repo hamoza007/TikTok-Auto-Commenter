@@ -19,7 +19,8 @@
                         <thead>
                             <tr>
                                 <th>Project</th>
-                                <th>Video ID</th>
+                                <th>Account</th>
+                                <th>Video</th>
                                 <th>Comment</th>
                                 <th>Status</th>
                                 <th>Timestamp</th>
@@ -35,7 +36,22 @@
                                     <span class="text-muted">Deleted Project</span>
                                     {% endif %}
                                 </td>
-                                <td><code>{{ entry.video_id }}</code></td>
+                                <td>
+                                    {% if entry.account_nickname %}
+                                    <span class="badge bg-info text-dark">{{ entry.account_nickname }}</span>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if entry.video_url %}
+                                    <a href="{{ entry.video_url }}" target="_blank" class="text-info small">
+                                        {{ entry.video_url[:30] }}{% if entry.video_url|length > 30 %}...{% endif %}
+                                    </a>
+                                    {% else %}
+                                    <code>{{ entry.video_id }}</code>
+                                    {% endif %}
+                                </td>
                                 <td>
                                     <span title="{{ entry.comment_text }}">
                                         {{ entry.comment_text[:60] }}{% if entry.comment_text|length > 60 %}...{% endif %}

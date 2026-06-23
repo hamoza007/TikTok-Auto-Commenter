@@ -26,14 +26,23 @@
                             <i class="bi bi-link-45deg"></i> {{ project.video_url[:50] }}{% if project.video_url|length > 50 %}...{% endif %}
                         </p>
                         <p class="small text-muted mb-2">
-                            <i class="bi bi-person"></i> {{ project.account.nickname }}
+                            <i class="bi bi-chat-dots"></i> Prompt: {{ project.prompt[:80] }}{% if project.prompt|length > 80 %}...{% endif %}
                         </p>
-                        <p class="small mb-2">
-                            <i class="bi bi-chat-dots"></i> Comments:
+                        <p class="small text-muted mb-2">
+                            <i class="bi bi-people"></i> Accounts: {{ project.comments|length }}
                         </p>
-                        <div class="bg-dark rounded p-2 mb-3" style="max-height: 80px; overflow-y: auto;">
-                            <small class="text-muted" style="white-space: pre-wrap;">{{ project.comment_template[:200] }}{% if project.comment_template|length > 200 %}...{% endif %}</small>
+                        {% if project.comments %}
+                        <div class="bg-dark rounded p-2 mb-3" style="max-height: 100px; overflow-y: auto;">
+                            {% for pc in project.comments[:5] %}
+                            <small class="text-muted d-block">
+                                <strong>{{ pc.account.nickname if pc.account else 'Deleted' }}:</strong> {{ pc.comment_text[:60] }}{% if pc.comment_text|length > 60 %}...{% endif %}
+                            </small>
+                            {% endfor %}
+                            {% if project.comments|length > 5 %}
+                            <small class="text-muted">...and {{ project.comments|length - 5 }} more</small>
+                            {% endif %}
                         </div>
+                        {% endif %}
                         <p class="small text-muted mb-0">
                             <i class="bi bi-calendar"></i> {{ project.created_at.strftime('%Y-%m-%d %H:%M') }}
                         </p>
@@ -62,7 +71,7 @@
                         <p class="text-muted mt-3">No projects yet. Create one to get started.</p>
                         {% if not accounts %}
                         <p class="text-warning small">
-                            <i class="bi bi-exclamation-triangle"></i> You need to add an account in Settings first.
+                            <i class="bi bi-exclamation-triangle"></i> You need to add a TikTok account in Settings first.
                         </p>
                         {% endif %}
                     </div>
@@ -77,52 +86,191 @@
 <div class="modal fade" id="createProjectModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <form action="{{ url_for('projects_create') }}" method="POST">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Create New Project</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    {% if accounts %}
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Create New Project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% if accounts %}
+                <!-- Step 1: Project Info -->
+                <div id="step1">
                     <div class="mb-3">
                         <label class="form-label">Project Name</label>
-                        <input type="text" class="form-control" name="name" placeholder="My Commenting Project" required>
+                        <input type="text" class="form-control" id="projectName" placeholder="My Commenting Project" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Video URL</label>
-                        <input type="text" class="form-control" name="video_url" placeholder="https://www.tiktok.com/@user/video/1234567890" required>
+                        <input type="text" class="form-control" id="projectVideoUrl" placeholder="https://www.tiktok.com/@user/video/1234567890" required>
                         <div class="form-text">Paste the full TikTok video URL or just the video ID.</div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Comment Template</label>
-                        <textarea class="form-control" name="comment_template" rows="4" placeholder="Enter comments (one per line)&#10;Great video!&#10;Love this content!" required></textarea>
-                        <div class="form-text">Enter one comment per line. Multiple comments will be sent in sequence.</div>
+                        <label class="form-label">Comment Theme / Prompt</label>
+                        <textarea class="form-control" id="projectPrompt" rows="3" placeholder="Describe the theme for comments, e.g. 'Funny reactions to a dance video'" required></textarea>
+                        <div class="form-text">Describe the style/theme of comments. AI will generate a unique comment for each account.</div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Account</label>
-                        <select class="form-select" name="account_id" required>
-                            <option value="">Select an account</option>
-                            {% for account in accounts %}
-                            <option value="{{ account.id }}">{{ account.nickname }}</option>
-                            {% endfor %}
-                        </select>
+                    <div class="text-end">
+                        <button type="button" class="btn btn-primary" id="generateCommentsBtn" onclick="generateComments()">
+                            <i class="bi bi-stars"></i> Generate Comments
+                        </button>
                     </div>
-                    {% else %}
-                    <div class="text-center py-4">
-                        <i class="bi bi-exclamation-triangle display-4 text-warning"></i>
-                        <p class="text-muted mt-3">You need to add an account first before creating a project.</p>
-                        <a href="{{ url_for('settings') }}" class="btn btn-outline-primary">Go to Settings</a>
-                    </div>
-                    {% endif %}
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    {% if accounts %}
-                    <button type="submit" class="btn btn-primary">Create Project</button>
-                    {% endif %}
+
+                <!-- Step 2: Review & Edit Comments -->
+                <div id="step2" style="display: none;">
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle"></i> Review and edit the generated comments below. Each comment will be posted from the assigned account.
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm" id="commentsTable">
+                            <thead>
+                                <tr>
+                                    <th>Account</th>
+                                    <th>Comment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="commentsTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <button type="button" class="btn btn-secondary" onclick="backToStep1()">
+                            <i class="bi bi-arrow-left"></i> Back
+                        </button>
+                        <button type="button" class="btn btn-success" id="createProjectBtn" onclick="createProject()">
+                            <i class="bi bi-check-circle"></i> Create & Save
+                        </button>
+                    </div>
                 </div>
-            </form>
+
+                <!-- Loading State -->
+                <div id="loadingState" style="display: none;" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-3">Generating comments with AI...</p>
+                </div>
+
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-exclamation-triangle display-4 text-warning"></i>
+                    <p class="text-muted mt-3">You need to add a TikTok account first before creating a project.</p>
+                    <p class="text-muted small">Once accounts are added, you can use <strong>Generate Comments</strong> to create AI-powered comments.</p>
+                    <a href="{{ url_for('settings') }}" class="btn btn-outline-primary">Go to Settings</a>
+                </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+let generatedComments = [];
+
+function generateComments() {
+    const name = document.getElementById('projectName').value.trim();
+    const videoUrl = document.getElementById('projectVideoUrl').value.trim();
+    const prompt = document.getElementById('projectPrompt').value.trim();
+
+    if (!name || !videoUrl || !prompt) {
+        alert('Please fill in all fields (Name, Video URL, and Prompt).');
+        return;
+    }
+
+    // Show loading
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+
+    fetch('/projects/generate-comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, video_url: videoUrl, prompt })
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('loadingState').style.display = 'none';
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+            document.getElementById('step1').style.display = 'block';
+            return;
+        }
+
+        generatedComments = data.comments;
+        renderCommentsTable();
+        document.getElementById('step2').style.display = 'block';
+    })
+    .catch(err => {
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('step1').style.display = 'block';
+        alert('Failed to generate comments. Check your API key in Settings.');
+        console.error(err);
+    });
+}
+
+function renderCommentsTable() {
+    const tbody = document.getElementById('commentsTableBody');
+    tbody.innerHTML = '';
+    generatedComments.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><strong>${item.account_nickname}</strong></td>
+            <td>
+                <input type="text" class="form-control form-control-sm" 
+                    value="${item.comment_text.replace(/"/g, '&quot;')}" 
+                    data-index="${index}" 
+                    onchange="updateComment(this)">
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function updateComment(input) {
+    const index = parseInt(input.dataset.index);
+    generatedComments[index].comment_text = input.value;
+}
+
+function backToStep1() {
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step1').style.display = 'block';
+}
+
+function createProject() {
+    const name = document.getElementById('projectName').value.trim();
+    const videoUrl = document.getElementById('projectVideoUrl').value.trim();
+    const prompt = document.getElementById('projectPrompt').value.trim();
+
+    const comments = generatedComments.map(c => ({
+        account_id: c.account_id,
+        comment_text: c.comment_text
+    }));
+
+    document.getElementById('createProjectBtn').disabled = true;
+
+    fetch('/projects/create-with-comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, video_url: videoUrl, prompt, comments })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+            document.getElementById('createProjectBtn').disabled = false;
+            return;
+        }
+        // Success - reload the page
+        window.location.reload();
+    })
+    .catch(err => {
+        alert('Failed to create project.');
+        document.getElementById('createProjectBtn').disabled = false;
+        console.error(err);
+    });
+}
+</script>
 {% endblock %}
