@@ -1,0 +1,13 @@
+[Unit]
+Description=TikTok Auto Commenter Flask App
+After=network.target
+
+[Service]
+User=aichaguimaoune
+WorkingDirectory=/home/aichaguimaoune/TikTok-Auto-Commenter
+ExecStart=/usr/local/bin/gunicorn --bind 0.0.0.0:5000 "app:create_app()"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
