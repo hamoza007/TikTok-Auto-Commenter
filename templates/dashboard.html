@@ -211,20 +211,32 @@ function generateComments() {
     });
 }
 
+function escapeHtmlAttr(str) {
+    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function renderCommentsTable() {
     const tbody = document.getElementById('commentsTableBody');
     tbody.innerHTML = '';
     generatedComments.forEach((item, index) => {
         const row = document.createElement('tr');
-        row.innerHTML = `
-            <td><strong>${item.account_nickname}</strong></td>
-            <td>
-                <input type="text" class="form-control form-control-sm" 
-                    value="${item.comment_text.replace(/"/g, '&quot;')}" 
-                    data-index="${index}" 
-                    onchange="updateComment(this)">
-            </td>
-        `;
+
+        const nicknameCell = document.createElement('td');
+        const strong = document.createElement('strong');
+        strong.textContent = item.account_nickname;
+        nicknameCell.appendChild(strong);
+
+        const commentCell = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control form-control-sm';
+        input.value = item.comment_text;
+        input.dataset.index = index;
+        input.addEventListener('change', function() { updateComment(this); });
+        commentCell.appendChild(input);
+
+        row.appendChild(nicknameCell);
+        row.appendChild(commentCell);
         tbody.appendChild(row);
     });
 }

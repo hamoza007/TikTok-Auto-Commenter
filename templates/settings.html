@@ -16,12 +16,12 @@
                     <div class="mb-3">
                         <label class="form-label">OpenAI API Key</label>
                         <div class="input-group">
-                            <input type="password" class="form-control" id="globalApiKey" name="openai_api_key" value="{{ openai_api_key }}" placeholder="sk-...">
+                            <input type="password" class="form-control" id="globalApiKey" name="openai_api_key" value="" placeholder="{% if openai_api_key %}sk-...{{ openai_api_key[-4:] }} (saved){% else %}sk-...{% endif %}">
                             <button type="button" class="btn btn-outline-secondary" id="fetchModelsBtn">
                                 <i class="bi bi-arrow-clockwise"></i> Fetch Models
                             </button>
                         </div>
-                        <div class="form-text">Used for AI-generated comments across all accounts.</div>
+                        <div class="form-text">Used for AI-generated comments across all accounts. Leave blank to keep existing key.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">OpenAI Model</label>
@@ -187,20 +187,32 @@
 {% block scripts %}
 <script>
 document.getElementById('fetchModelsBtn').addEventListener('click', function() {
-    const apiKeyInput = document.getElementById('globalApiKey');
     const modelSelect = document.getElementById('globalModelSelect');
     const btn = this;
 
+    // Save the key first if provided, then fetch models using stored key
+    const apiKeyInput = document.getElementById('globalApiKey');
     const apiKey = apiKeyInput.value.trim();
-    let url = '/settings/api/models';
-    if (apiKey) {
-        url += '?api_key=' + encodeURIComponent(apiKey);
-    }
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Fetching...';
 
-    fetch(url)
+    // If user entered a new key, save it first via the global settings form
+    let savePromise;
+    if (apiKey) {
+        const formData = new FormData();
+        formData.append('openai_api_key', apiKey);
+        formData.append('openai_model', modelSelect.value || '');
+        savePromise = fetch('{{ url_for("settings_global") }}', {
+            method: 'POST',
+            body: formData
+        });
+    } else {
+        savePromise = Promise.resolve();
+    }
+
+    savePromise
+        .then(() => fetch('/settings/api/models'))
         .then(response => response.json())
         .then(data => {
             modelSelect.innerHTML = '';

@@ -237,6 +237,8 @@ def run_project_task(app, project_id):
 
                 if status == "spam":
                     time.sleep(10)
+                elif status == "success":
+                    time.sleep(2)
 
             project.status = "completed"
             db.session.commit()
@@ -265,6 +267,7 @@ def run_facebook_project_task(app, project_id):
 
         try:
             from facebook import Facebook
+            import time
 
             # Get all pending comments for this project
             pending_comments = ProjectComment.query.filter_by(
@@ -317,6 +320,9 @@ def run_facebook_project_task(app, project_id):
                 )
                 db.session.add(history_entry)
                 db.session.commit()
+
+                if status == "success":
+                    time.sleep(2)
 
             # Check overall status
             all_failed = all(
@@ -385,7 +391,8 @@ def create_app():
             "settings.html",
             accounts=accounts,
             openai_api_key=openai_api_key,
-            openai_model=openai_model
+            openai_model=openai_model,
+            has_api_key=bool(openai_api_key)
         )
 
     @app.route("/settings/add", methods=["POST"])
@@ -452,7 +459,9 @@ def create_app():
         openai_api_key = request.form.get("openai_api_key", "").strip()
         openai_model = request.form.get("openai_model", "").strip()
 
-        set_global_setting("openai_api_key", openai_api_key)
+        # Only update API key if a new value is provided (don't overwrite with blank)
+        if openai_api_key:
+            set_global_setting("openai_api_key", openai_api_key)
         set_global_setting("openai_model", openai_model)
 
         flash("Global AI settings saved successfully.", "success")
@@ -460,12 +469,12 @@ def create_app():
 
     @app.route("/settings/api/models")
     def settings_api_models():
-        api_key = request.args.get("api_key", "").strip()
-        if not api_key:
-            api_key = get_global_setting("openai_api_key") or ""
+        # Only use the stored API key - do not accept keys via query string
+        # to avoid exposing credentials in URLs, logs, and browser history
+        api_key = get_global_setting("openai_api_key") or ""
 
         if not api_key:
-            return jsonify({"error": "No API key provided", "models": []}), 200
+            return jsonify({"error": "No API key configured. Save your API key in Global Settings first.", "models": []}), 200
 
         try:
             from openai import OpenAI
@@ -566,6 +575,11 @@ def create_app():
             account_id = item.get("account_id")
             comment_text = (item.get("comment_text") or "").strip()
             if account_id and comment_text:
+                # Validate that account_id exists and belongs to the tiktok platform
+                account = db.session.get(Account, int(account_id))
+                if not account or account.platform != "tiktok":
+                    db.session.rollback()
+                    return jsonify({"error": f"Invalid account_id: {account_id}. Account does not exist or is not a TikTok account."}), 400
                 pc = ProjectComment(
                     project_id=project.id,
                     account_id=int(account_id),
@@ -587,6 +601,10 @@ def create_app():
         if project.status == "running":
             flash("Project is already running.", "warning")
             return redirect(url_for("dashboard"))
+
+        # Reset all ProjectComment statuses to "pending" so the run re-sends comments
+        for pc in project.comments:
+            pc.status = "pending"
 
         # Set status to "running" and commit before spawning the thread to prevent
         # duplicate execution from concurrent requests (e.g., double-clicks).
@@ -691,6 +709,11 @@ def create_app():
             account_id = item.get("account_id")
             comment_text = (item.get("comment_text") or "").strip()
             if account_id and comment_text:
+                # Validate that account_id exists and belongs to the facebook platform
+                account = db.session.get(Account, int(account_id))
+                if not account or account.platform != "facebook":
+                    db.session.rollback()
+                    return jsonify({"error": f"Invalid account_id: {account_id}. Account does not exist or is not a Facebook account."}), 400
                 pc = ProjectComment(
                     project_id=project.id,
                     account_id=int(account_id),
@@ -716,6 +739,10 @@ def create_app():
         if project.status == "running":
             flash("Project is already running.", "warning")
             return redirect(url_for("facebook_dashboard"))
+
+        # Reset all ProjectComment statuses to "pending" so the run re-sends comments
+        for pc in project.comments:
+            pc.status = "pending"
 
         # Set status to "running" and commit before spawning the thread
         project.status = "running"
