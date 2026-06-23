@@ -56,16 +56,38 @@ class Facebook:
 
         Returns:
             Dictionary of cookie name-value pairs.
+
+        Raises:
+            Warning log if cookies are empty or missing required keys.
         """
         try:
             cookies = json.loads(cookies_json)
             if not isinstance(cookies, dict):
                 logger.warning("Cookies JSON is not a dict, using empty cookies")
                 return {}
+            # Validate required cookie keys
+            if not cookies.get("c_user") or not cookies.get("xs"):
+                logger.warning(
+                    "Facebook cookies missing required keys (c_user, xs). "
+                    "Account will be skipped during warm-up."
+                )
+                return {}
             return cookies
-        except (json.JSONDecodeError, TypeError):
-            logger.warning("Failed to parse cookies JSON, using empty cookies")
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(
+                "Failed to parse cookies JSON: %s. "
+                "Account will be skipped during warm-up.", str(e)
+            )
             return {}
+
+    @property
+    def has_valid_cookies(self) -> bool:
+        """Check if this Facebook instance has valid (non-empty) cookies.
+
+        Returns:
+            True if cookies were parsed successfully and contain required keys.
+        """
+        return bool(self.cookies and self.cookies.get("c_user") and self.cookies.get("xs"))
 
     def watch_video(self, post_id: str) -> bool:
         """Simulate watching a video/post by fetching its page.

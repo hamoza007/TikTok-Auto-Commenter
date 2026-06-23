@@ -75,13 +75,18 @@ class WarmupEngine:
             logger.info("WarmupEngine scheduler shut down")
 
     def _check_warmup_tasks(self):
-        """Periodic task that checks for pending warm-up actions and executes them."""
+        """Periodic task that checks for pending warm-up actions and executes them.
+
+        Spawns a separate thread per account so warm-ups run in parallel without
+        blocking the scheduler tick.
+        """
         if not self.app:
             return
 
         with self.app.app_context():
             try:
                 from app import db, Account, WarmupSchedule, WarmupLog
+                import threading as _threading
                 today = date.today()
                 now = datetime.now()
 
@@ -111,9 +116,30 @@ class WarmupEngine:
                     if current_time < window_start or current_time > window_end:
                         continue
 
-                    # Generate and execute daily plan for this account
-                    plan = self._get_or_create_daily_plan(schedule)
-                    self._execute_plan(account, schedule, plan)
+                    # Spawn a thread for this account's warm-up plan execution
+                    account_id = account.id
+                    schedule_id = schedule.id
+
+                    def _run_account_warmup(acc_id, sched_id):
+                        with self.app.app_context():
+                            try:
+                                sched = db.session.get(WarmupSchedule, sched_id)
+                                acc = db.session.get(Account, acc_id)
+                                if not sched or not acc:
+                                    return
+                                plan = self._get_or_create_daily_plan(sched)
+                                self._execute_plan(acc, sched, plan)
+                            except Exception as e:
+                                logger.exception(
+                                    "Warmup thread failed for account %s: %s", acc_id, str(e)
+                                )
+
+                    thread = _threading.Thread(
+                        target=_run_account_warmup,
+                        args=(account_id, schedule_id),
+                        daemon=True
+                    )
+                    thread.start()
 
             except Exception as e:
                 logger.exception("WarmupEngine check failed: %s", str(e))
@@ -209,13 +235,22 @@ class WarmupEngine:
         proxy = account.proxy if account.proxy else None
         tiktok = TikTok(account.session_id, proxy=proxy)
 
-        # Get feed videos for targeting
-        targets = tiktok.get_feed()
-        if not targets:
-            # Try the older get_video method as fallback
-            targets = tiktok.get_video()
+        # Get feed videos for targeting - returns list of dicts with aweme_id and author_uid
+        feed_items = tiktok.get_feed()
 
-        if not targets:
+        # Handle both new format (list of dicts) and legacy fallback (list of strings)
+        if feed_items and isinstance(feed_items[0], dict):
+            aweme_ids = [item["aweme_id"] for item in feed_items if item.get("aweme_id")]
+            user_ids = [item["author_uid"] for item in feed_items if item.get("author_uid")]
+        else:
+            aweme_ids = feed_items if feed_items else []
+            user_ids = []
+
+        if not aweme_ids:
+            # Try the older get_video method as fallback
+            aweme_ids = tiktok.get_video()
+
+        if not aweme_ids:
             logger.warning("No targets found for TikTok account %s", account.id)
             # Log a skipped entry
             log_entry = WarmupLog(
@@ -231,7 +266,7 @@ class WarmupEngine:
             return
 
         for action in plan:
-            target = random.choice(targets)
+            target = random.choice(aweme_ids)
             status = "failed"
             detail = ""
 
@@ -252,11 +287,19 @@ class WarmupEngine:
                     status = "success" if success is True else "failed"
                     detail = f"Comment: {comment_text}"
                 elif action["type"] == "follow":
-                    # For follow, we would need user IDs from the feed
-                    # Using target as a placeholder - in practice this would be a user_id
-                    success = tiktok.follow_user(target)
-                    status = "success" if success else "failed"
-                    detail = f"Followed user from video {target}"
+                    # Use actual user_ids from the feed for follow actions
+                    if user_ids:
+                        follow_target = random.choice(user_ids)
+                        success = tiktok.follow_user(follow_target)
+                        status = "success" if success else "failed"
+                        detail = f"Followed user {follow_target}"
+                    else:
+                        status = "skipped"
+                        detail = "No user_ids available from feed, skipping follow"
+                        logger.info(
+                            "Skipping follow action for account %s: no user_ids in feed",
+                            account.id
+                        )
             except Exception as e:
                 status = "failed"
                 detail = str(e)[:200]
@@ -264,7 +307,7 @@ class WarmupEngine:
             log_entry = WarmupLog(
                 account_id=account.id,
                 action_type=action["type"],
-                target_id=target,
+                target_id=target if action["type"] != "follow" or not user_ids else follow_target,
                 status=status,
                 detail=detail,
                 executed_at=datetime.utcnow()
@@ -289,6 +332,24 @@ class WarmupEngine:
 
         proxy = account.proxy if account.proxy else None
         fb = Facebook(account.session_id, proxy=proxy)
+
+        # Check if cookies are valid before proceeding
+        if not fb.has_valid_cookies:
+            logger.warning(
+                "Facebook account %s has invalid or empty cookies, skipping warm-up",
+                account.id
+            )
+            log_entry = WarmupLog(
+                account_id=account.id,
+                action_type="watch",
+                target_id="",
+                status="skipped",
+                detail="Invalid or missing cookies (c_user/xs). Update cookies in Settings.",
+                executed_at=datetime.utcnow()
+            )
+            db.session.add(log_entry)
+            db.session.commit()
+            return
 
         # Get feed posts for targeting
         targets = fb.get_feed()

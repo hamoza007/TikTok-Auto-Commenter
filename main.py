@@ -59,7 +59,8 @@ class TikTok:
         """Fetch recommended videos from the For You feed for warm-up targets.
 
         Returns:
-            A list of aweme_ids (video IDs) from the feed.
+            A list of dicts with 'aweme_id' and 'author_uid' keys from the feed.
+            Falls back to a list of aweme_id strings if author info is unavailable.
         """
         url = f"{self.base_url}/aweme/v1/feed/"
         params = self.params.copy()
@@ -81,7 +82,17 @@ class TikTok:
             response = requests.get(url, params=params, headers=headers, proxies=self.proxies)
             data = response.json()
             aweme_list = data.get("aweme_list", [])
-            return [item["aweme_id"] for item in aweme_list if "aweme_id" in item]
+            results = []
+            for item in aweme_list:
+                aweme_id = item.get("aweme_id")
+                if not aweme_id:
+                    continue
+                author_uid = None
+                author = item.get("author")
+                if author and isinstance(author, dict):
+                    author_uid = author.get("uid")
+                results.append({"aweme_id": aweme_id, "author_uid": author_uid})
+            return results
         except Exception:
             return []
 

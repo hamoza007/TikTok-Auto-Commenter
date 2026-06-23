@@ -245,20 +245,9 @@ def run_project_task(app, project_id):
                 # Check if account is warmed up before sending comments
                 from warmup import is_account_warmed_up
                 if not is_account_warmed_up(account.id, db.session, WarmupSchedule):
-                    pc.status = "pending"
-                    history_entry = History(
-                        project_id=project.id,
-                        video_id=aweme_id,
-                        comment_text=pc.comment_text,
-                        status="failed",
-                        account_nickname=account.nickname,
-                        video_url=project.video_url,
-                        timestamp=datetime.utcnow()
-                    )
-                    db.session.add(history_entry)
-                    db.session.commit()
+                    # Leave comment as pending - do not write a History entry for deferrals
                     logger.info(
-                        "Account %s not warmed up yet, deferring comment",
+                        "Account %s not warmed up yet, skipping comment (will retry later)",
                         account.nickname
                     )
                     continue
@@ -355,20 +344,9 @@ def run_facebook_project_task(app, project_id):
                 # Check if account is warmed up before sending comments
                 from warmup import is_account_warmed_up
                 if not is_account_warmed_up(account.id, db.session, WarmupSchedule):
-                    pc.status = "pending"
-                    history_entry = History(
-                        project_id=project.id,
-                        video_id="",
-                        comment_text=pc.comment_text,
-                        status="failed",
-                        account_nickname=account.nickname,
-                        video_url=project.video_url,
-                        timestamp=datetime.utcnow()
-                    )
-                    db.session.add(history_entry)
-                    db.session.commit()
+                    # Leave comment as pending - do not write a History entry for deferrals
                     logger.info(
-                        "Facebook account %s not warmed up yet, deferring comment",
+                        "Facebook account %s not warmed up yet, skipping comment (will retry later)",
                         account.nickname
                     )
                     continue
@@ -881,16 +859,48 @@ def create_app():
             schedule = WarmupSchedule(account_id=account_id)
             db.session.add(schedule)
 
-        schedule.daily_watch_min = int(request.form.get("daily_watch_min", 3))
-        schedule.daily_watch_max = int(request.form.get("daily_watch_max", 8))
-        schedule.daily_like_min = int(request.form.get("daily_like_min", 2))
-        schedule.daily_like_max = int(request.form.get("daily_like_max", 5))
-        schedule.daily_comment_min = int(request.form.get("daily_comment_min", 1))
-        schedule.daily_comment_max = int(request.form.get("daily_comment_max", 2))
-        schedule.daily_follow_min = int(request.form.get("daily_follow_min", 0))
-        schedule.daily_follow_max = int(request.form.get("daily_follow_max", 1))
-        schedule.time_window_start = request.form.get("time_window_start", "08:00").strip()
-        schedule.time_window_end = request.form.get("time_window_end", "22:00").strip()
+        def _parse_int(field, default, min_val=0, max_val=20):
+            """Parse an integer form field, clamping to [min_val, max_val]."""
+            try:
+                val = int(request.form.get(field, default))
+            except (ValueError, TypeError):
+                val = default
+            return max(min_val, min(max_val, val))
+
+        def _parse_time(field, default="08:00"):
+            """Parse a time field in HH:MM format, returning default on failure."""
+            raw = request.form.get(field, default).strip()
+            try:
+                parts = raw.split(":")
+                h = int(parts[0])
+                m = int(parts[1])
+                if 0 <= h <= 23 and 0 <= m <= 59:
+                    return f"{h:02d}:{m:02d}"
+            except (ValueError, IndexError):
+                pass
+            return default
+
+        schedule.daily_watch_min = _parse_int("daily_watch_min", 3)
+        schedule.daily_watch_max = _parse_int("daily_watch_max", 8)
+        schedule.daily_like_min = _parse_int("daily_like_min", 2)
+        schedule.daily_like_max = _parse_int("daily_like_max", 5)
+        schedule.daily_comment_min = _parse_int("daily_comment_min", 1)
+        schedule.daily_comment_max = _parse_int("daily_comment_max", 2)
+        schedule.daily_follow_min = _parse_int("daily_follow_min", 0)
+        schedule.daily_follow_max = _parse_int("daily_follow_max", 1)
+
+        # Ensure min <= max for each action pair
+        if schedule.daily_watch_min > schedule.daily_watch_max:
+            schedule.daily_watch_min = schedule.daily_watch_max
+        if schedule.daily_like_min > schedule.daily_like_max:
+            schedule.daily_like_min = schedule.daily_like_max
+        if schedule.daily_comment_min > schedule.daily_comment_max:
+            schedule.daily_comment_min = schedule.daily_comment_max
+        if schedule.daily_follow_min > schedule.daily_follow_max:
+            schedule.daily_follow_min = schedule.daily_follow_max
+
+        schedule.time_window_start = _parse_time("time_window_start", "08:00")
+        schedule.time_window_end = _parse_time("time_window_end", "22:00")
         schedule.updated_at = datetime.utcnow()
 
         db.session.commit()
