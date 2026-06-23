@@ -95,9 +95,6 @@ def run_project_task(app, project_id):
         if not project:
             return
 
-        project.status = "running"
-        db.session.commit()
-
         try:
             from main import TikTok
 
@@ -133,8 +130,6 @@ def run_project_task(app, project_id):
             comments = [c.strip() for c in project.comment_template.split("\n") if c.strip()]
             if not comments:
                 comments = [project.comment_template]
-
-            import random
 
             for comment_text in comments:
                 # If account has OpenAI key, try to generate a contextual comment
@@ -198,7 +193,7 @@ def create_app():
 
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///tiktok_dashboard.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    # Enable scoped sessions for thread-safety with background tasks
+    # Enable connection health checks to detect stale connections before use
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_pre_ping": True,
     }
@@ -253,9 +248,14 @@ def create_app():
             return redirect(url_for("settings"))
 
         account.nickname = request.form.get("nickname", account.nickname).strip()
-        account.session_id = request.form.get("session_id", account.session_id).strip()
+        # Only update credentials if a new value is provided (blank means keep existing)
+        new_session_id = request.form.get("session_id", "").strip()
+        if new_session_id:
+            account.session_id = new_session_id
         account.proxy = request.form.get("proxy", "").strip()
-        account.openai_api_key = request.form.get("openai_api_key", "").strip()
+        new_openai_api_key = request.form.get("openai_api_key", "").strip()
+        if new_openai_api_key:
+            account.openai_api_key = new_openai_api_key
         account.updated_at = datetime.utcnow()
 
         db.session.commit()
@@ -318,6 +318,11 @@ def create_app():
         if project.status == "running":
             flash("Project is already running.", "warning")
             return redirect(url_for("dashboard"))
+
+        # Set status to "running" and commit before spawning the thread to prevent
+        # duplicate execution from concurrent requests (e.g., double-clicks).
+        project.status = "running"
+        db.session.commit()
 
         # TODO: Add thread timeout/cancellation mechanism and limit concurrent threads
         thread = threading.Thread(target=run_project_task, args=(app, project.id))
