@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Facebook Auto Commenter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="bi bi-facebook"></i> Facebook Auto Commenter</h2>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createProjectModal">
+                <i class="bi bi-plus-circle"></i> New Project
+            </button>
+        </div>
+
+        <!-- Projects List -->
+        <div class="row">
+            {% if projects %}
+            {% for project in projects %}
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">{{ project.name }}</h6>
+                        <span class="badge badge-{{ project.status }}">{{ project.status }}</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted mb-2">
+                            <i class="bi bi-link-45deg"></i> {{ project.video_url[:50] }}{% if project.video_url|length > 50 %}...{% endif %}
+                        </p>
+                        <p class="small text-muted mb-2">
+                            <i class="bi bi-chat-dots"></i> Prompt: {{ project.prompt[:80] }}{% if project.prompt|length > 80 %}...{% endif %}
+                        </p>
+                        <p class="small text-muted mb-2">
+                            <i class="bi bi-people"></i> Accounts: {{ project.comments|length }}
+                        </p>
+                        {% if project.comments %}
+                        <div class="bg-dark rounded p-2 mb-3" style="max-height: 100px; overflow-y: auto;">
+                            {% for pc in project.comments[:5] %}
+                            <small class="text-muted d-block">
+                                <strong>{{ pc.account.nickname if pc.account else 'Deleted' }}:</strong> {{ pc.comment_text[:60] }}{% if pc.comment_text|length > 60 %}...{% endif %}
+                            </small>
+                            {% endfor %}
+                            {% if project.comments|length > 5 %}
+                            <small class="text-muted">...and {{ project.comments|length - 5 }} more</small>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        <p class="small text-muted mb-0">
+                            <i class="bi bi-calendar"></i> {{ project.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        </p>
+                    </div>
+                    <div class="card-footer text-end">
+                        {% if project.status != 'running' %}
+                        <form action="{{ url_for('facebook_projects_run', id=project.id) }}" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="bi bi-play-fill"></i> Run
+                            </button>
+                        </form>
+                        {% else %}
+                        <button class="btn btn-sm btn-secondary" disabled>
+                            <i class="bi bi-hourglass-split"></i> Running...
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-folder-plus display-4 text-muted"></i>
+                        <p class="text-muted mt-3">No projects yet. Create one to get started.</p>
+                        {% if not accounts %}
+                        <p class="text-warning small">
+                            <i class="bi bi-exclamation-triangle"></i> You need to add a Facebook account in Settings first.
+                        </p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Create Project Modal -->
+<div class="modal fade" id="createProjectModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Create New Project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% if accounts %}
+                <!-- Step 1: Project Info -->
+                <div id="step1">
+                    <div class="mb-3">
+                        <label class="form-label">Project Name</label>
+                        <input type="text" class="form-control" id="projectName" placeholder="My Facebook Commenting Project" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Post URL</label>
+                        <input type="text" class="form-control" id="projectVideoUrl" placeholder="https://www.facebook.com/post/1234567890" required>
+                        <div class="form-text">Paste the full Facebook post URL.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Comment Theme / Prompt</label>
+                        <textarea class="form-control" id="projectPrompt" rows="3" placeholder="Describe the theme for comments, e.g. 'Supportive reactions to a product announcement'" required></textarea>
+                        <div class="form-text">Describe the style/theme of comments. AI will generate a unique comment for each account.</div>
+                    </div>
+                    <div class="text-end">
+                        <button type="button" class="btn btn-primary" id="generateCommentsBtn" onclick="generateComments()">
+                            <i class="bi bi-stars"></i> Generate Comments
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Review & Edit Comments -->
+                <div id="step2" style="display: none;">
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle"></i> Review and edit the generated comments below. Each comment will be posted from the assigned account.
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm" id="commentsTable">
+                            <thead>
+                                <tr>
+                                    <th>Account</th>
+                                    <th>Comment</th>
+                                </tr>
+                            </thead>
+                            <tbody id="commentsTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <button type="button" class="btn btn-secondary" onclick="backToStep1()">
+                            <i class="bi bi-arrow-left"></i> Back
+                        </button>
+                        <button type="button" class="btn btn-success" id="createProjectBtn" onclick="createProject()">
+                            <i class="bi bi-check-circle"></i> Create & Save
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="loadingState" style="display: none;" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-3">Generating comments with AI...</p>
+                </div>
+
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-exclamation-triangle display-4 text-warning"></i>
+                    <p class="text-muted mt-3">You need to add a Facebook account first before creating a project.</p>
+                    <p class="text-muted small">Once accounts are added, you can use <strong>Generate Comments</strong> to create AI-powered comments.</p>
+                    <a href="{{ url_for('settings') }}" class="btn btn-outline-primary">Go to Settings</a>
+                </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let generatedComments = [];
+
+function generateComments() {
+    const name = document.getElementById('projectName').value.trim();
+    const videoUrl = document.getElementById('projectVideoUrl').value.trim();
+    const prompt = document.getElementById('projectPrompt').value.trim();
+
+    if (!name || !videoUrl || !prompt) {
+        alert('Please fill in all fields (Name, Post URL, and Prompt).');
+        return;
+    }
+
+    // Show loading
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+
+    fetch('/facebook/projects/generate-comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, video_url: videoUrl, prompt })
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('loadingState').style.display = 'none';
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+            document.getElementById('step1').style.display = 'block';
+            return;
+        }
+
+        generatedComments = data.comments;
+        renderCommentsTable();
+        document.getElementById('step2').style.display = 'block';
+    })
+    .catch(err => {
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('step1').style.display = 'block';
+        alert('Failed to generate comments. Check your API key in Settings.');
+        console.error(err);
+    });
+}
+
+function renderCommentsTable() {
+    const tbody = document.getElementById('commentsTableBody');
+    tbody.innerHTML = '';
+    generatedComments.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><strong>${item.account_nickname}</strong></td>
+            <td>
+                <input type="text" class="form-control form-control-sm" 
+                    value="${item.comment_text.replace(/"/g, '&quot;')}" 
+                    data-index="${index}" 
+                    onchange="updateComment(this)">
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function updateComment(input) {
+    const index = parseInt(input.dataset.index);
+    generatedComments[index].comment_text = input.value;
+}
+
+function backToStep1() {
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step1').style.display = 'block';
+}
+
+function createProject() {
+    const name = document.getElementById('projectName').value.trim();
+    const videoUrl = document.getElementById('projectVideoUrl').value.trim();
+    const prompt = document.getElementById('projectPrompt').value.trim();
+
+    const comments = generatedComments.map(c => ({
+        account_id: c.account_id,
+        comment_text: c.comment_text
+    }));
+
+    document.getElementById('createProjectBtn').disabled = true;
+
+    fetch('/facebook/projects/create-with-comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, video_url: videoUrl, prompt, comments })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+            document.getElementById('createProjectBtn').disabled = false;
+            return;
+        }
+        // Success - reload the page
+        window.location.reload();
+    })
+    .catch(err => {
+        alert('Failed to create project.');
+        document.getElementById('createProjectBtn').disabled = false;
+        console.error(err);
+    });
+}
+</script>
+{% endblock %}

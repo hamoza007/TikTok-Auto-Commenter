@@ -100,7 +100,12 @@
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
-                            <i class="bi bi-grid-fill"></i> Dashboard
+                            <i class="bi bi-tiktok"></i> TikTok
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'facebook_dashboard' %}active{% endif %}" href="{{ url_for('facebook_dashboard') }}">
+                            <i class="bi bi-facebook"></i> Facebook
                         </a>
                     </li>
                     <li class="nav-item">

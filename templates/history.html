@@ -13,20 +13,20 @@
                 <h5 class="mb-0">Project Run History</h5>
             </div>
             <div class="card-body">
-                {% if entries %}
                 <div class="table-responsive">
                     <table class="table table-hover">
                         <thead>
                             <tr>
                                 <th>Project</th>
                                 <th>Account</th>
-                                <th>Video</th>
+                                <th>Video Link</th>
                                 <th>Comment</th>
                                 <th>Status</th>
                                 <th>Timestamp</th>
                             </tr>
                         </thead>
                         <tbody>
+                            {% if entries %}
                             {% for entry in entries %}
                             <tr>
                                 <td>
@@ -71,15 +71,17 @@
                                 <td>{{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
                             </tr>
                             {% endfor %}
+                            {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center py-5">
+                                    <i class="bi bi-clock display-4 text-muted"></i>
+                                    <p class="text-muted mt-3">No history yet. Run a project from the Dashboard to see results here.</p>
+                                </td>
+                            </tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>
-                {% else %}
-                <div class="text-center py-5">
-                    <i class="bi bi-clock display-4 text-muted"></i>
-                    <p class="text-muted mt-3">No history yet. Run a project from the Dashboard to see results here.</p>
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>

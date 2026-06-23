@@ -252,6 +252,94 @@ def run_project_task(app, project_id):
                 db.session.commit()
 
 
+def run_facebook_project_task(app, project_id):
+    """Background task to run a Facebook project's commenting workflow.
+
+    Uses the placeholder Facebook class which will mark all comments as failed
+    since the integration is not yet implemented.
+    """
+    with app.app_context():
+        project = db.session.get(Project, project_id)
+        if not project:
+            return
+
+        try:
+            from facebook import Facebook
+
+            # Get all pending comments for this project
+            pending_comments = ProjectComment.query.filter_by(
+                project_id=project.id, status="pending"
+            ).all()
+
+            if not pending_comments:
+                project.status = "completed"
+                project.error_message = "No pending comments to send"
+                db.session.commit()
+                return
+
+            for pc in pending_comments:
+                account = db.session.get(Account, pc.account_id)
+                if not account:
+                    pc.status = "failed"
+                    history_entry = History(
+                        project_id=project.id,
+                        video_id="",
+                        comment_text=pc.comment_text,
+                        status="failed",
+                        account_nickname="Unknown (deleted)",
+                        video_url=project.video_url,
+                        timestamp=datetime.utcnow()
+                    )
+                    db.session.add(history_entry)
+                    db.session.commit()
+                    continue
+
+                proxy = account.proxy if account.proxy else None
+                fb = Facebook(account.session_id, proxy=proxy)
+
+                result = fb.send(pc.comment_text, project.video_url)
+
+                if result is True:
+                    status = "success"
+                else:
+                    status = "failed"
+
+                pc.status = status
+
+                history_entry = History(
+                    project_id=project.id,
+                    video_id="",
+                    comment_text=pc.comment_text,
+                    status=status,
+                    account_nickname=account.nickname,
+                    video_url=project.video_url,
+                    timestamp=datetime.utcnow()
+                )
+                db.session.add(history_entry)
+                db.session.commit()
+
+            # Check overall status
+            all_failed = all(
+                pc.status == "failed"
+                for pc in ProjectComment.query.filter_by(project_id=project.id).all()
+            )
+            if all_failed:
+                project.status = "failed"
+                project.error_message = "Facebook integration not yet implemented"
+            else:
+                project.status = "completed"
+            db.session.commit()
+
+        except Exception as e:
+            logger.exception("Facebook project %s failed with error: %s", project_id, str(e))
+            db.session.rollback()
+            project = db.session.get(Project, project_id)
+            if project:
+                project.status = "failed"
+                project.error_message = str(e)[:500]
+                db.session.commit()
+
+
 def create_app():
     app = Flask(__name__)
 
@@ -518,6 +606,127 @@ def create_app():
     def history():
         entries = History.query.order_by(History.timestamp.desc()).all()
         return render_template("history.html", entries=entries)
+
+    # --- Facebook Dashboard Routes ---
+    @app.route("/facebook")
+    def facebook_dashboard():
+        projects = Project.query.filter_by(platform="facebook").order_by(Project.created_at.desc()).all()
+        accounts = Account.query.filter_by(platform="facebook").all()
+        return render_template("facebook_dashboard.html", projects=projects, accounts=accounts)
+
+    @app.route("/facebook/projects/generate-comments", methods=["POST"])
+    def facebook_projects_generate_comments():
+        """Generate AI comments for all Facebook accounts based on a prompt."""
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON request"}), 400
+
+        name = (data.get("name") or "").strip()
+        video_url = (data.get("video_url") or "").strip()
+        prompt = (data.get("prompt") or "").strip()
+
+        if not name or not video_url or not prompt:
+            return jsonify({"error": "Name, post URL, and prompt are required"}), 400
+
+        # Get all Facebook accounts
+        facebook_accounts = Account.query.filter_by(platform="facebook").all()
+        if not facebook_accounts:
+            return jsonify({"error": "No Facebook accounts found. Add accounts in Settings first."}), 400
+
+        count = len(facebook_accounts)
+
+        # Get global OpenAI API key
+        api_key = get_global_setting("openai_api_key")
+        if not api_key:
+            return jsonify({"error": "OpenAI API key not configured. Set it in Settings."}), 400
+
+        # Generate comments
+        comments = generate_comment_with_openai(api_key, prompt, video_url, count=count)
+
+        # If generation failed or returned fewer comments, fill with prompt-based defaults
+        while len(comments) < count:
+            comments.append(f"{prompt} #{len(comments) + 1}")
+
+        # Build response with account assignments
+        result = []
+        for i, account in enumerate(facebook_accounts):
+            result.append({
+                "account_id": account.id,
+                "account_nickname": account.nickname,
+                "comment_text": comments[i]
+            })
+
+        return jsonify({"comments": result})
+
+    @app.route("/facebook/projects/create-with-comments", methods=["POST"])
+    def facebook_projects_create_with_comments():
+        """Create a Facebook project with pre-generated per-account comments."""
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON request"}), 400
+
+        name = (data.get("name") or "").strip()
+        video_url = (data.get("video_url") or "").strip()
+        prompt = (data.get("prompt") or "").strip()
+        comments_data = data.get("comments", [])
+
+        if not name or not video_url or not prompt:
+            return jsonify({"error": "Name, post URL, and prompt are required"}), 400
+
+        if not comments_data:
+            return jsonify({"error": "At least one comment is required"}), 400
+
+        project = Project(
+            name=name,
+            video_url=video_url,
+            aweme_id="",
+            prompt=prompt,
+            platform="facebook",
+            status="pending"
+        )
+        db.session.add(project)
+        db.session.flush()  # Get the project ID
+
+        for item in comments_data:
+            account_id = item.get("account_id")
+            comment_text = (item.get("comment_text") or "").strip()
+            if account_id and comment_text:
+                pc = ProjectComment(
+                    project_id=project.id,
+                    account_id=int(account_id),
+                    comment_text=comment_text,
+                    status="pending"
+                )
+                db.session.add(pc)
+
+        db.session.commit()
+        return jsonify({"success": True, "project_id": project.id})
+
+    @app.route("/facebook/projects/run/<int:id>", methods=["POST"])
+    def facebook_projects_run(id):
+        project = db.session.get(Project, id)
+        if not project:
+            flash("Project not found.", "error")
+            return redirect(url_for("facebook_dashboard"))
+
+        if project.platform != "facebook":
+            flash("This is not a Facebook project.", "error")
+            return redirect(url_for("facebook_dashboard"))
+
+        if project.status == "running":
+            flash("Project is already running.", "warning")
+            return redirect(url_for("facebook_dashboard"))
+
+        # Set status to "running" and commit before spawning the thread
+        project.status = "running"
+        db.session.commit()
+
+        thread = threading.Thread(target=run_facebook_project_task, args=(app, project.id))
+        thread.daemon = True
+        thread.start()
+
+        flash("Project started running in the background.", "success")
+        return redirect(url_for("facebook_dashboard"))
 
     return app
 
