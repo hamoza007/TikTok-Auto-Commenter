@@ -1,5 +1,6 @@
 import os
 import re
+import logging
 import threading
 from datetime import datetime
 
@@ -7,6 +8,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
+logger = logging.getLogger(__name__)
 
 
 class Account(db.Model):
@@ -29,6 +31,7 @@ class Project(db.Model):
     comment_template = db.Column(db.Text, nullable=False)
     account_id = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=False)
     status = db.Column(db.String(50), default="pending")
+    error_message = db.Column(db.Text, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     history_entries = db.relationship("History", backref="project", lazy=True, cascade="all, delete-orphan")
@@ -44,13 +47,16 @@ class History(db.Model):
 
 
 def extract_aweme_id(video_url):
-    """Extract aweme_id from a TikTok video URL or return the URL if it looks like an ID."""
+    """Extract aweme_id from a TikTok video URL or return the URL if it looks like an ID.
+
+    Returns a numeric string aweme_id, or None if extraction fails.
+    """
     match = re.search(r'/video/(\d+)', video_url)
     if match:
         return match.group(1)
     if video_url.strip().isdigit():
         return video_url.strip()
-    return video_url.strip()
+    return None
 
 
 def generate_comment_with_openai(api_key, template, video_url):
@@ -98,11 +104,28 @@ def run_project_task(app, project_id):
             account = db.session.get(Account, project.account_id)
             if not account:
                 project.status = "failed"
+                project.error_message = "Linked account not found"
                 db.session.commit()
                 return
 
-            tiktok = TikTok(account.session_id)
+            # Pass proxy from account to TikTok class
+            proxy = account.proxy if account.proxy else None
+            tiktok = TikTok(account.session_id, proxy=proxy)
+
             aweme_id = extract_aweme_id(project.video_url)
+
+            # Validate aweme_id is numeric
+            if aweme_id is None:
+                error_msg = (
+                    f"Could not extract a valid numeric aweme_id from URL: "
+                    f"{project.video_url}"
+                )
+                logger.error(error_msg)
+                project.status = "failed"
+                project.error_message = error_msg
+                db.session.commit()
+                return
+
             if not project.aweme_id:
                 project.aweme_id = aweme_id
                 db.session.commit()
@@ -149,20 +172,50 @@ def run_project_task(app, project_id):
             db.session.commit()
 
         except Exception as e:
-            project.status = "failed"
-            db.session.commit()
+            logger.exception("Project %s failed with error: %s", project_id, str(e))
+            # Refresh the session in case it's in a bad state from the exception
+            db.session.rollback()
+            project = db.session.get(Project, project_id)
+            if project:
+                project.status = "failed"
+                project.error_message = str(e)[:500]
+                db.session.commit()
 
 
 def create_app():
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+
+    # Generate a random secret key if not set via environment variable.
+    # This ensures session cookies are not forgeable even in development.
+    secret_key = os.environ.get("SECRET_KEY")
+    if not secret_key:
+        secret_key = os.urandom(24).hex()
+        logger.warning(
+            "SECRET_KEY not set in environment. Generated a random key. "
+            "Sessions will not persist across restarts."
+        )
+    app.config["SECRET_KEY"] = secret_key
+
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///tiktok_dashboard.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    # Enable scoped sessions for thread-safety with background tasks
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+    }
 
     db.init_app(app)
 
     with app.app_context():
         db.create_all()
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
+
+    # TODO: Add CSRF protection (e.g., Flask-WTF) for all state-mutating POST routes
+    # TODO: Consider application-level encryption for credentials (session_id, openai_api_key) at rest
 
     # --- Settings Routes ---
     @app.route("/settings")
@@ -245,7 +298,7 @@ def create_app():
         project = Project(
             name=name,
             video_url=video_url,
-            aweme_id=aweme_id,
+            aweme_id=aweme_id or "",
             comment_template=comment_template,
             account_id=int(account_id),
             status="pending"
@@ -266,6 +319,7 @@ def create_app():
             flash("Project is already running.", "warning")
             return redirect(url_for("dashboard"))
 
+        # TODO: Add thread timeout/cancellation mechanism and limit concurrent threads
         thread = threading.Thread(target=run_project_task, args=(app, project.id))
         thread.daemon = True
         thread.start()

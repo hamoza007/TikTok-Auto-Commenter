@@ -10,7 +10,7 @@ from MedoSigner import Argus, Gorgon, md5, Ladon
 #+------------------------------------------------------+
 
 class TikTok:
-    def __init__(self, sessionid: str) -> None:
+    def __init__(self, sessionid: str, proxy: str = None) -> None:
         self.sessionid = sessionid
         self.base_url = "https://api22-normal-c-alisg.tiktokv.com"
         self.headers = {
@@ -25,6 +25,13 @@ class TikTok:
             'region': "IQ",
             'aid': "1340",
         }
+        # Set up proxy configuration for requests calls
+        self.proxies = None
+        if proxy:
+            self.proxies = {
+                'http': proxy,
+                'https': proxy,
+            }
 
     def _sign(self, params, payload: str = None, sec_device_id: str = "", aid: int = 567753,
               license_id: int = 1611921764, sdk_version_str: str = "2.3.1.i18n",
@@ -67,7 +74,7 @@ class TikTok:
         })
 
         try:
-            response = requests.get(url, params=params, headers=headers).text
+            response = requests.get(url, params=params, headers=headers, proxies=self.proxies).text
             aweme_ids = re.findall(r'"aweme_id":"(\d+)"', response)
             return list(set(aweme_ids))
         except Exception:
@@ -95,7 +102,7 @@ class TikTok:
         })
 
         try:
-            response = requests.post(url, params=params, data=data, headers=headers).json()
+            response = requests.post(url, params=params, data=data, headers=headers, proxies=self.proxies).json()
             if response.get("status_msg") == "Comment sent successfully":
                 return True
             elif response.get("status_msg") == "You're commenting too fast. Take a break!":
