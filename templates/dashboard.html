@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - TikTok Auto Commenter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="bi bi-grid-fill"></i> Dashboard</h2>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createProjectModal">
+                <i class="bi bi-plus-circle"></i> New Project
+            </button>
+        </div>
+
+        <!-- Projects List -->
+        <div class="row">
+            {% if projects %}
+            {% for project in projects %}
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">{{ project.name }}</h6>
+                        <span class="badge badge-{{ project.status }}">{{ project.status }}</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted mb-2">
+                            <i class="bi bi-link-45deg"></i> {{ project.video_url[:50] }}{% if project.video_url|length > 50 %}...{% endif %}
+                        </p>
+                        <p class="small text-muted mb-2">
+                            <i class="bi bi-person"></i> {{ project.account.nickname }}
+                        </p>
+                        <p class="small mb-2">
+                            <i class="bi bi-chat-dots"></i> Comments:
+                        </p>
+                        <div class="bg-dark rounded p-2 mb-3" style="max-height: 80px; overflow-y: auto;">
+                            <small class="text-muted" style="white-space: pre-wrap;">{{ project.comment_template[:200] }}{% if project.comment_template|length > 200 %}...{% endif %}</small>
+                        </div>
+                        <p class="small text-muted mb-0">
+                            <i class="bi bi-calendar"></i> {{ project.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        </p>
+                    </div>
+                    <div class="card-footer text-end">
+                        {% if project.status != 'running' %}
+                        <form action="{{ url_for('projects_run', id=project.id) }}" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="bi bi-play-fill"></i> Run
+                            </button>
+                        </form>
+                        {% else %}
+                        <button class="btn btn-sm btn-secondary" disabled>
+                            <i class="bi bi-hourglass-split"></i> Running...
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-folder-plus display-4 text-muted"></i>
+                        <p class="text-muted mt-3">No projects yet. Create one to get started.</p>
+                        {% if not accounts %}
+                        <p class="text-warning small">
+                            <i class="bi bi-exclamation-triangle"></i> You need to add an account in Settings first.
+                        </p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Create Project Modal -->
+<div class="modal fade" id="createProjectModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form action="{{ url_for('projects_create') }}" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Create New Project</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {% if accounts %}
+                    <div class="mb-3">
+                        <label class="form-label">Project Name</label>
+                        <input type="text" class="form-control" name="name" placeholder="My Commenting Project" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Video URL</label>
+                        <input type="text" class="form-control" name="video_url" placeholder="https://www.tiktok.com/@user/video/1234567890" required>
+                        <div class="form-text">Paste the full TikTok video URL or just the video ID.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Comment Template</label>
+                        <textarea class="form-control" name="comment_template" rows="4" placeholder="Enter comments (one per line)&#10;Great video!&#10;Love this content!" required></textarea>
+                        <div class="form-text">Enter one comment per line. Multiple comments will be sent in sequence.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Account</label>
+                        <select class="form-select" name="account_id" required>
+                            <option value="">Select an account</option>
+                            {% for account in accounts %}
+                            <option value="{{ account.id }}">{{ account.nickname }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-exclamation-triangle display-4 text-warning"></i>
+                        <p class="text-muted mt-3">You need to add an account first before creating a project.</p>
+                        <a href="{{ url_for('settings') }}" class="btn btn-outline-primary">Go to Settings</a>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    {% if accounts %}
+                    <button type="submit" class="btn btn-primary">Create Project</button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

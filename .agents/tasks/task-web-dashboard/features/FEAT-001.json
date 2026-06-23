@@ -1,0 +1,39 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Build a complete Flask web application with SQLite database, providing three main sections: Settings (manage TikTok accounts with nickname, session ID, proxy, and OpenAI API key), Dashboard (create and run projects linking videos to comment templates and accounts), and History (view past project runs with video, comments used, and completion status). Includes responsive web UI with Bootstrap styling.",
+  "status": "in_progress",
+  "steps": [
+    "Create app.py as the main Flask application entry point with create_app() factory pattern. Set up SQLite database with SQLAlchemy models: Account (id, nickname, session_id, proxy, openai_api_key, created_at, updated_at), Project (id, name, video_url, aweme_id, comment_template, account_id FK, status, created_at), and History (id, project_id FK, video_id, comment_text, status, timestamp).",
+    "Update requirements.txt to include: flask>=2.3.0, flask-sqlalchemy>=3.0, requests>=2.28.0, openai>=1.0.0",
+    "Create templates/base.html with Bootstrap 5 CDN, responsive navbar with links to Settings, Dashboard, and History sections. Use a clean modern dark-themed design.",
+    "Create templates/settings.html - Display list of saved accounts in a table (nickname, proxy, masked API key, actions). Include a modal/form to add new account (fields: nickname, session_id, proxy, openai_api_key). Include edit and delete functionality with AJAX or form submissions.",
+    "Create templates/dashboard.html - Display list of projects with status indicators. Include form to create new project (fields: project name, video URL, comment template textarea, account dropdown). Add a 'Run' button for each project that triggers the auto-commenting process in the background.",
+    "Create templates/history.html - Display table of completed project runs showing: project name, video URL/ID, comments used (expandable list), completion status (success/failed/partial), and timestamp.",
+    "Create routes for Settings: GET /settings (list accounts), POST /settings/add (create account), POST /settings/edit/<id> (update account), POST /settings/delete/<id> (delete account).",
+    "Create routes for Dashboard: GET / or GET /dashboard (list projects), POST /projects/create (create project), POST /projects/run/<id> (trigger project execution).",
+    "Create routes for History: GET /history (list all history entries with project details).",
+    "Integrate the existing TikTok class from main.py into the project execution flow: when a project is run, instantiate TikTok with the linked account's session_id, fetch videos or use the specified video URL's aweme_id, send comments from the template, and record results in the History table.",
+    "Add background task handling for project execution using threading so the web UI remains responsive while comments are being sent. Update project status (pending, running, completed, failed) accordingly.",
+    "Add OpenAI integration: if an account has an openai_api_key configured, use it to generate contextual comments instead of using the static template. Fall back to the template if no API key is set or if the API call fails.",
+    "Add .gitignore entries for instance/ (SQLite DB location), *.db files, and __pycache__/"
+  ],
+  "acceptance_criteria": [
+    "Flask app starts without errors on port 5000",
+    "Settings page displays, allows adding a new account with nickname/session_id/proxy/openai_api_key, editing existing accounts, and deleting accounts",
+    "Dashboard page displays, allows creating a project linked to a video URL, comment template, and account",
+    "Running a project sends comments using the TikTok class and records results",
+    "History page shows past project runs with video, comments used, and completion status",
+    "SQLite database persists data between app restarts",
+    "All pages are responsive and usable"
+  ],
+  "verification": [
+    "Run: pip install -r requirements.txt - should succeed without errors",
+    "Run: python -c \"from app import create_app; app = create_app(); client = app.test_client(); resp = client.get('/'); assert resp.status_code == 200, f'Got {resp.status_code}'; print('Homepage OK')\"",
+    "Run: python -c \"from app import create_app; app = create_app(); client = app.test_client(); resp = client.get('/settings'); assert resp.status_code == 200; print('Settings OK')\"",
+    "Run: python -c \"from app import create_app; app = create_app(); client = app.test_client(); resp = client.get('/history'); assert resp.status_code == 200; print('History OK')\"",
+    "Run: python -c \"from app import create_app, db; app = create_app(); ctx = app.app_context(); ctx.push(); db.create_all(); print('DB schema OK')\""
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

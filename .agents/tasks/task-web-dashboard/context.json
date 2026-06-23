@@ -1,0 +1,24 @@
+{
+  "project_type": "Python CLI tool being converted to Flask web application",
+  "language": "Python",
+  "build_system": "pip with requirements.txt",
+  "test_framework": "None currently - will add basic verification via Flask test client",
+  "build_command": "pip install -r requirements.txt",
+  "test_command": "python -c \"from app import create_app; app = create_app(); print('App created successfully')\"",
+  "verification_instructions": "1. Install requirements: pip install -r requirements.txt\n2. Run the Flask app: python app.py\n3. Verify web UI loads at http://localhost:5000\n4. Confirm Settings page allows adding/editing accounts\n5. Confirm Dashboard allows creating projects\n6. Confirm History section shows past project runs",
+  "snapshot_or_generated_files": null,
+  "setup_instructions": "pip install -r requirements.txt",
+  "environment_constraints": "Open internet available. Python 3.9.25 installed.",
+  "contribution_requirements": "No CONTRIBUTING.md. Standard git workflow.",
+  "key_patterns": "- TikTok class in main.py takes sessionid, has get_video() and send(comment, aweme_id) methods\n- MedoSigner/ handles TikTok API signature generation (Gorgon, Argus, Ladon)\n- comments.json stores pre-loaded comment templates in EN/AR\n- The TikTok class uses requests library for HTTP calls",
+  "relevant_files": [
+    "main.py",
+    "comments.json",
+    "requirements.txt",
+    "MedoSigner/__init__.py",
+    "MedoSigner/gorgon.py",
+    "MedoSigner/argus.py",
+    "MedoSigner/ladon.py"
+  ],
+  "directory_structure": "Root: main.py (CLI bot), comments.json (comment templates), requirements.txt (deps), MedoSigner/ (TikTok signature module with argus.py, gorgon.py, ladon.py)"
+}

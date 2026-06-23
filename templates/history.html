@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}History - TikTok Auto Commenter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="bi bi-clock-history"></i> History</h2>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Project Run History</h5>
+            </div>
+            <div class="card-body">
+                {% if entries %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Project</th>
+                                <th>Video ID</th>
+                                <th>Comment</th>
+                                <th>Status</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in entries %}
+                            <tr>
+                                <td>
+                                    {% if entry.project %}
+                                    <strong>{{ entry.project.name }}</strong>
+                                    {% else %}
+                                    <span class="text-muted">Deleted Project</span>
+                                    {% endif %}
+                                </td>
+                                <td><code>{{ entry.video_id }}</code></td>
+                                <td>
+                                    <span title="{{ entry.comment_text }}">
+                                        {{ entry.comment_text[:60] }}{% if entry.comment_text|length > 60 %}...{% endif %}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if entry.status == 'success' %}
+                                    <span class="badge badge-success">Success</span>
+                                    {% elif entry.status == 'failed' %}
+                                    <span class="badge badge-failed">Failed</span>
+                                    {% elif entry.status == 'spam' %}
+                                    <span class="badge badge-spam">Spam</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ entry.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-clock display-4 text-muted"></i>
+                    <p class="text-muted mt-3">No history yet. Run a project from the Dashboard to see results here.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

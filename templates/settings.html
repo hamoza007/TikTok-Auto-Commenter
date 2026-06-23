@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Settings - TikTok Auto Commenter{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="bi bi-gear-fill"></i> Account Settings</h2>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+                <i class="bi bi-plus-circle"></i> Add Account
+            </button>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Saved Accounts</h5>
+            </div>
+            <div class="card-body">
+                {% if accounts %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Nickname</th>
+                                <th>Proxy</th>
+                                <th>OpenAI Key</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for account in accounts %}
+                            <tr>
+                                <td>{{ account.id }}</td>
+                                <td><strong>{{ account.nickname }}</strong></td>
+                                <td>{{ account.proxy or 'None' }}</td>
+                                <td>
+                                    {% if account.openai_api_key %}
+                                    <span class="text-success">{{ account.openai_api_key[:8] }}...{{ account.openai_api_key[-4:] }}</span>
+                                    {% else %}
+                                    <span class="text-muted">Not set</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ account.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editAccountModal{{ account.id }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form action="{{ url_for('settings_delete', id=account.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this account?')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+
+                            <!-- Edit Modal for each account -->
+                            <div class="modal fade" id="editAccountModal{{ account.id }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <form action="{{ url_for('settings_edit', id=account.id) }}" method="POST">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">Edit Account: {{ account.nickname }}</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <div class="mb-3">
+                                                    <label class="form-label">Nickname</label>
+                                                    <input type="text" class="form-control" name="nickname" value="{{ account.nickname }}" required>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">Session ID</label>
+                                                    <input type="text" class="form-control" name="session_id" value="{{ account.session_id }}" required>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">Proxy</label>
+                                                    <input type="text" class="form-control" name="proxy" value="{{ account.proxy }}" placeholder="http://host:port">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">OpenAI API Key</label>
+                                                    <input type="text" class="form-control" name="openai_api_key" value="{{ account.openai_api_key }}" placeholder="sk-...">
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-primary">Save Changes</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-person-plus display-4 text-muted"></i>
+                    <p class="text-muted mt-3">No accounts added yet. Click "Add Account" to get started.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Account Modal -->
+<div class="modal fade" id="addAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('settings_add') }}" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Add New Account</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nickname</label>
+                        <input type="text" class="form-control" name="nickname" placeholder="My TikTok Account" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Session ID</label>
+                        <input type="text" class="form-control" name="session_id" placeholder="Enter TikTok session ID" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Proxy (optional)</label>
+                        <input type="text" class="form-control" name="proxy" placeholder="http://host:port">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">OpenAI API Key (optional)</label>
+                        <input type="text" class="form-control" name="openai_api_key" placeholder="sk-...">
+                        <div class="form-text">If set, AI-generated comments will be used instead of templates.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

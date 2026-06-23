@@ -1,0 +1,7 @@
+{
+  "task_id": "task-web-dashboard",
+  "task_description": "Convert TikTok Auto-Commenter from CLI tool to Flask web application with Settings (account management), Dashboard (project creation and execution), and History (past run tracking) sections.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001"],
+  "blocked_reason": null
+}
