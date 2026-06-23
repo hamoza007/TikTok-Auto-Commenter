@@ -35,5 +35,5 @@
     "Run: python -c \"from app import create_app, db; app = create_app(); ctx = app.app_context(); ctx.push(); db.create_all(); print('DB schema OK')\""
   ],
   "blocked_reason": null,
-  "findings": "All verification tests pass. python3 is the correct command (not python). Added cascade delete on Account->Project and Project->History relationships to handle FK constraints properly when deleting accounts. SQLite database is stored in instance/ which is gitignored."
+  "findings": "All verification tests pass. python3 is the correct command (not python). Added cascade delete on Account->Project and Project->History relationships to handle FK constraints properly when deleting accounts. SQLite database is stored in instance/ which is gitignored. V2 review fixes applied: (1) credentials hidden with type=password and not pre-filled in edit modals, (2) race condition fixed by committing running status before thread spawn, (3) unused import random removed, (4) misleading pool_pre_ping comment corrected. Issue #2 (CSRF) was acknowledged but not fixed as it requires adding Flask-WTF dependency and is out of scope for this pass."
 }
