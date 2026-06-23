@@ -4,8 +4,44 @@
 {% block content %}
 <div class="row">
     <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-gear-fill"></i> Account Settings</h2>
+        <h2 class="mb-4"><i class="bi bi-gear-fill"></i> Settings</h2>
+
+        <!-- Global AI Settings Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-robot"></i> Global AI Settings</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('settings_global') }}" method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">OpenAI API Key</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="globalApiKey" name="openai_api_key" value="{{ openai_api_key }}" placeholder="sk-...">
+                            <button type="button" class="btn btn-outline-secondary" id="fetchModelsBtn">
+                                <i class="bi bi-arrow-clockwise"></i> Fetch Models
+                            </button>
+                        </div>
+                        <div class="form-text">Used for AI-generated comments across all accounts.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">OpenAI Model</label>
+                        <select class="form-select" id="globalModelSelect" name="openai_model">
+                            {% if openai_model %}
+                            <option value="{{ openai_model }}" selected>{{ openai_model }}</option>
+                            {% else %}
+                            <option value="" selected>Select a model (fetch models first)</option>
+                            {% endif %}
+                        </select>
+                        <div class="form-text">Click "Fetch Models" to load available chat models from OpenAI.</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save Global Settings</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Accounts Section -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="bi bi-people-fill"></i> Accounts</h4>
             <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
                 <i class="bi bi-plus-circle"></i> Add Account
             </button>
@@ -23,8 +59,8 @@
                             <tr>
                                 <th>#</th>
                                 <th>Nickname</th>
+                                <th>Platform</th>
                                 <th>Proxy</th>
-                                <th>OpenAI Key</th>
                                 <th>Created</th>
                                 <th>Actions</th>
                             </tr>
@@ -34,14 +70,14 @@
                             <tr>
                                 <td>{{ account.id }}</td>
                                 <td><strong>{{ account.nickname }}</strong></td>
-                                <td>{{ account.proxy or 'None' }}</td>
                                 <td>
-                                    {% if account.openai_api_key %}
-                                    <span class="text-success">{{ account.openai_api_key[:8] }}...{{ account.openai_api_key[-4:] }}</span>
+                                    {% if account.platform == 'facebook' %}
+                                    <span class="badge bg-primary">Facebook</span>
                                     {% else %}
-                                    <span class="text-muted">Not set</span>
+                                    <span class="badge bg-info">TikTok</span>
                                     {% endif %}
                                 </td>
+                                <td>{{ account.proxy or 'None' }}</td>
                                 <td>{{ account.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editAccountModal{{ account.id }}">
@@ -78,9 +114,11 @@
                                                     <input type="text" class="form-control" name="proxy" value="{{ account.proxy }}" placeholder="http://host:port">
                                                 </div>
                                                 <div class="mb-3">
-                                                    <label class="form-label">OpenAI API Key</label>
-                                                    <input type="password" class="form-control" name="openai_api_key" placeholder="Leave blank to keep unchanged">
-                                                    <div class="form-text">{% if account.openai_api_key %}Currently set ({{ account.openai_api_key[:4] }}...{{ account.openai_api_key[-4:] }}){% else %}Not set{% endif %}</div>
+                                                    <label class="form-label">Platform</label>
+                                                    <select class="form-select" name="platform">
+                                                        <option value="tiktok" {% if account.platform == 'tiktok' %}selected{% endif %}>TikTok</option>
+                                                        <option value="facebook" {% if account.platform == 'facebook' %}selected{% endif %}>Facebook</option>
+                                                    </select>
                                                 </div>
                                             </div>
                                             <div class="modal-footer">
@@ -118,20 +156,22 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Nickname</label>
-                        <input type="text" class="form-control" name="nickname" placeholder="My TikTok Account" required>
+                        <input type="text" class="form-control" name="nickname" placeholder="My Account" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Session ID</label>
-                        <input type="password" class="form-control" name="session_id" placeholder="Enter TikTok session ID" required>
+                        <input type="password" class="form-control" name="session_id" placeholder="Enter session ID" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Proxy (optional)</label>
                         <input type="text" class="form-control" name="proxy" placeholder="http://host:port">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">OpenAI API Key (optional)</label>
-                        <input type="password" class="form-control" name="openai_api_key" placeholder="sk-...">
-                        <div class="form-text">If set, AI-generated comments will be used instead of templates.</div>
+                        <label class="form-label">Platform</label>
+                        <select class="form-select" name="platform">
+                            <option value="tiktok" selected>TikTok</option>
+                            <option value="facebook">Facebook</option>
+                        </select>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -142,4 +182,58 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('fetchModelsBtn').addEventListener('click', function() {
+    const apiKeyInput = document.getElementById('globalApiKey');
+    const modelSelect = document.getElementById('globalModelSelect');
+    const btn = this;
+
+    const apiKey = apiKeyInput.value.trim();
+    let url = '/settings/api/models';
+    if (apiKey) {
+        url += '?api_key=' + encodeURIComponent(apiKey);
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Fetching...';
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            modelSelect.innerHTML = '';
+            if (data.error) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'Error: ' + data.error;
+                modelSelect.appendChild(opt);
+            } else if (data.models && data.models.length > 0) {
+                const currentModel = '{{ openai_model }}';
+                data.models.forEach(function(model) {
+                    const opt = document.createElement('option');
+                    opt.value = model;
+                    opt.textContent = model;
+                    if (model === currentModel) {
+                        opt.selected = true;
+                    }
+                    modelSelect.appendChild(opt);
+                });
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No chat models found';
+                modelSelect.appendChild(opt);
+            }
+        })
+        .catch(function(err) {
+            modelSelect.innerHTML = '<option value="">Failed to fetch models</option>';
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Fetch Models';
+        });
+});
+</script>
 {% endblock %}

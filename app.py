@@ -4,7 +4,7 @@ import logging
 import threading
 from datetime import datetime
 
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
@@ -16,7 +16,7 @@ class Account(db.Model):
     nickname = db.Column(db.String(100), nullable=False)
     session_id = db.Column(db.String(255), nullable=False)
     proxy = db.Column(db.String(255), default="")
-    openai_api_key = db.Column(db.String(255), default="")
+    platform = db.Column(db.String(50), default="tiktok")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -46,6 +46,29 @@ class History(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class GlobalSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.Text, default="")
+
+
+def get_global_setting(key):
+    """Get a global setting value by key. Returns None if not found."""
+    setting = GlobalSettings.query.filter_by(key=key).first()
+    return setting.value if setting else None
+
+
+def set_global_setting(key, value):
+    """Set a global setting value (upsert). Creates if not exists, updates if exists."""
+    setting = GlobalSettings.query.filter_by(key=key).first()
+    if setting:
+        setting.value = value
+    else:
+        setting = GlobalSettings(key=key, value=value)
+        db.session.add(setting)
+    db.session.commit()
+
+
 def extract_aweme_id(video_url):
     """Extract aweme_id from a TikTok video URL or return the URL if it looks like an ID.
 
@@ -64,8 +87,9 @@ def generate_comment_with_openai(api_key, template, video_url):
     try:
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
+        model = get_global_setting("openai_model") or "gpt-3.5-turbo"
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=model,
             messages=[
                 {
                     "role": "system",
@@ -132,10 +156,11 @@ def run_project_task(app, project_id):
                 comments = [project.comment_template]
 
             for comment_text in comments:
-                # If account has OpenAI key, try to generate a contextual comment
-                if account.openai_api_key:
+                # If global OpenAI key is set, try to generate a contextual comment
+                global_api_key = get_global_setting("openai_api_key")
+                if global_api_key:
                     generated = generate_comment_with_openai(
-                        account.openai_api_key, comment_text, project.video_url
+                        global_api_key, comment_text, project.video_url
                     )
                     if generated:
                         comment_text = generated
@@ -216,24 +241,34 @@ def create_app():
     @app.route("/settings")
     def settings():
         accounts = Account.query.order_by(Account.created_at.desc()).all()
-        return render_template("settings.html", accounts=accounts)
+        openai_api_key = get_global_setting("openai_api_key") or ""
+        openai_model = get_global_setting("openai_model") or ""
+        return render_template(
+            "settings.html",
+            accounts=accounts,
+            openai_api_key=openai_api_key,
+            openai_model=openai_model
+        )
 
     @app.route("/settings/add", methods=["POST"])
     def settings_add():
         nickname = request.form.get("nickname", "").strip()
         session_id = request.form.get("session_id", "").strip()
         proxy = request.form.get("proxy", "").strip()
-        openai_api_key = request.form.get("openai_api_key", "").strip()
+        platform = request.form.get("platform", "tiktok").strip()
 
         if not nickname or not session_id:
             flash("Nickname and Session ID are required.", "error")
             return redirect(url_for("settings"))
 
+        if platform not in ("tiktok", "facebook"):
+            platform = "tiktok"
+
         account = Account(
             nickname=nickname,
             session_id=session_id,
             proxy=proxy,
-            openai_api_key=openai_api_key
+            platform=platform
         )
         db.session.add(account)
         db.session.commit()
@@ -253,9 +288,9 @@ def create_app():
         if new_session_id:
             account.session_id = new_session_id
         account.proxy = request.form.get("proxy", "").strip()
-        new_openai_api_key = request.form.get("openai_api_key", "").strip()
-        if new_openai_api_key:
-            account.openai_api_key = new_openai_api_key
+        platform = request.form.get("platform", account.platform).strip()
+        if platform in ("tiktok", "facebook"):
+            account.platform = platform
         account.updated_at = datetime.utcnow()
 
         db.session.commit()
@@ -273,6 +308,38 @@ def create_app():
         db.session.commit()
         flash("Account deleted successfully.", "success")
         return redirect(url_for("settings"))
+
+    @app.route("/settings/global", methods=["POST"])
+    def settings_global():
+        openai_api_key = request.form.get("openai_api_key", "").strip()
+        openai_model = request.form.get("openai_model", "").strip()
+
+        set_global_setting("openai_api_key", openai_api_key)
+        set_global_setting("openai_model", openai_model)
+
+        flash("Global AI settings saved successfully.", "success")
+        return redirect(url_for("settings"))
+
+    @app.route("/settings/api/models")
+    def settings_api_models():
+        api_key = request.args.get("api_key", "").strip()
+        if not api_key:
+            api_key = get_global_setting("openai_api_key") or ""
+
+        if not api_key:
+            return jsonify({"error": "No API key provided", "models": []}), 200
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            models_response = client.models.list()
+            model_ids = sorted([
+                m.id for m in models_response.data
+                if m.id.startswith("gpt-")
+            ])
+            return jsonify({"models": model_ids})
+        except Exception as e:
+            return jsonify({"error": str(e), "models": []}), 200
 
     # --- Dashboard Routes ---
     @app.route("/")
